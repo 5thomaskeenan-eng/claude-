@@ -57,7 +57,7 @@ h2{font-family:var(--f-display);font-weight:800;font-size:44px;line-height:.95;m
 .foot{font-family:var(--f-mono);font-size:11px;color:var(--dim);letter-spacing:.1em}
 
 /* robot cards */
-.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .card{position:relative;background:rgba(21,26,25,.85);border:1px solid var(--rivet);padding:10px 10px 9px;cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:3px;min-width:0}
 .card .sw{height:5px;margin-bottom:6px;display:flex}
 .card .sw i{flex:1}
@@ -182,7 +182,8 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
   #menu::before{background:linear-gradient(0deg,rgba(6,8,7,.95) 0%,rgba(6,8,7,.85) 55%,rgba(6,8,7,.15) 100%)}
   .screen{top:auto;max-height:72%;width:100%;padding-left:max(16px,env(safe-area-inset-left,0px))}
   .screen.full{top:0;max-height:none}
-  .cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .card b{font-size:16px}
   .mbtn{font-size:26px;padding:5px 10px}
   .fname{font-size:18px}
   .hp{height:14px}
@@ -247,7 +248,7 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
   <section class="screen" id="s-title">
     <div class="eyebrow">Underground Robot Boxing League</div>
     <h1 class="logo">Iron<span>volt</span></h1>
-    <p class="tagline">Six salvaged fighting machines. Four illegal venues. Plate armor that comes off one punch at a time.</p>
+    <p class="tagline">Seven salvaged fighting mechs, each four times the size of a man. Four illegal venues. Plate armor that comes off one punch at a time.</p>
     <nav class="menu-list">
       <button class="mbtn" data-go="circuit">Circuit <small>Fight your way up the ladder</small></button>
       <button class="mbtn" data-go="exhibition">Exhibition <small>Any robot, any venue</small></button>
@@ -373,6 +374,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -400,9 +402,9 @@ const settings = Object.assign({ quality: IS_TOUCH ? 'medium' : 'high', shake: t
 const saveSettings = () => store.set('settings', settings);
 
 const QUALITY = {
-  low: { pr: 1, msaa: 0, bloom: false, shadow: 0, crowd: 0.45 },
-  medium: { pr: 1.35, msaa: 2, bloom: true, shadow: 1024, crowd: 0.75 },
-  high: { pr: 2, msaa: 4, bloom: true, shadow: 2048, crowd: 1 },
+  low: { pr: 1, msaa: 0, bloom: false, shadow: 0, crowd: 0.45, ao: false },
+  medium: { pr: 1.35, msaa: 2, bloom: true, shadow: 2048, crowd: 0.75, ao: false },
+  high: { pr: 2, msaa: 4, bloom: true, shadow: 4096, crowd: 1, ao: true },
 };
 
 // ---------------------------------------------------------------- renderer
@@ -416,13 +418,15 @@ try {
 }
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.95;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.15, 260);
+// world scale: robots are ~2.5 units tall and read as ~4.5 m mechs next to 1-unit humans
+const HUMAN = 0.55, GRAV = 7.2;
 camera.position.set(0, 3, 8);
 
 const GradeShader = {
@@ -462,8 +466,15 @@ function buildComposer() {
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(innerWidth, innerHeight);
   composer.addPass(new RenderPass(scene, camera));
+  if (q.ao) {
+    const ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 16 });
+    ao.blendIntensity = 0.95;
+    ao.overrideVisibility = function () { const c = this._visibilityCache; this.scene.traverse(o => { c.set(o, o.visible); if (o.isPoints || o.isLine || o.isSprite || o.userData.noAO) o.visible = false; }); };
+    composer.addPass(ao);
+  }
   bloomPass = null;
-  if (q.bloom) { bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.55, 0.88); composer.addPass(bloomPass); }
+  if (q.bloom) { bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.4, 3.0); composer.addPass(bloomPass); }
   composer.addPass(new OutputPass());
   gradePass = new ShaderPass(GradeShader);
   gradePass.uniforms.uRes.value.set(innerWidth, innerHeight);
@@ -484,7 +495,7 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------- procedural textures
 function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function canvasTex(w, h, draw, { repeat = null, srgb = true, aniso = 8 } = {}) {
-  const c = makeCanvas(w, h); const g = c.getContext('2d'); draw(g, w, h, c);
+  const c = makeCanvas(w, h); const g = c.getContext('2d', { willReadFrequently: true }); draw(g, w, h, c);
   const t = new THREE.CanvasTexture(c);
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso;
@@ -515,13 +526,96 @@ function scratches(g, w, h, n, col, aMax) {
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
   }
 }
+// tangent-space normal map from a height canvas (red channel = height)
+function normalFromHeight(hc, strength = 3) {
+  const w = hc.width, h = hc.height, src = hc.getContext('2d').getImageData(0, 0, w, h).data;
+  const c = makeCanvas(w, h), g = c.getContext('2d'), out = g.createImageData(w, h), d = out.data;
+  const H = (x, y) => src[((((y + h) % h) * w) + ((x + w) % w)) * 4] / 255;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (H(x + 1, y) - H(x - 1, y)) * strength, dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+    d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  }
+  g.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+}
+// normal map derived from an existing colour texture's luminance (for venue surfaces)
+function autoNormal(tex, strength = 2) {
+  const src = tex.userData.canvas; if (!src) return null;
+  const c = makeCanvas(src.width, src.height), g = c.getContext('2d'); g.drawImage(src, 0, 0);
+  const id = g.getImageData(0, 0, c.width, c.height), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; d[i] = d[i + 1] = d[i + 2] = l; }
+  g.putImageData(id, 0, 0);
+  const n = normalFromHeight(c, strength); n.repeat.copy(tex.repeat); return n;
+}
+function linTex(c) { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 function rivet(g, x, y, r = 5) {
   g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(x + 1, y + 1.5, r, 0, 7); g.fill();
   g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(x - .5, y - .5, r * .75, 0, 7); g.fill();
 }
 
+// Matched colour / height / metal-chip maps for armour panels. Variant A: single plate with a cut line,
+// B: 2x2 plates, C: banded plates with vents, Q: quilted padding.
+function panelSet(seed, variant) {
+  const rnd = mulberry32(seed), R = (a, b) => a + rnd() * (b - a), W = 512;
+  const cc = makeCanvas(W, W), hc = makeCanvas(W, W), mc = makeCanvas(W, W);
+  const g = cc.getContext('2d'), h = hc.getContext('2d'), m = mc.getContext('2d');
+  g.fillStyle = '#e4e3df'; g.fillRect(0, 0, W, W);
+  blotches(g, W, W, 60, '0,0,0', .03, .09, 30, 130); blotches(g, W, W, 25, '255,255,255', .03, .07, 30, 90);
+  h.fillStyle = 'rgb(118,118,118)'; h.fillRect(0, 0, W, W);
+  m.fillStyle = '#000'; m.fillRect(0, 0, W, W);
+  if (variant === 'Q') {
+    g.fillStyle = '#d6d4cc'; g.fillRect(0, 0, W, W); noiseFill(g, W, W, 26);
+    const s = 64;
+    for (let y = -s; y < W + s; y += s) for (let x = -s; x < W + s; x += s) {
+      const cx = x + (((y / s) | 0) % 2 ? s / 2 : 0), cy = y;
+      const gr = h.createRadialGradient(cx, cy, 2, cx, cy, s * 0.62); gr.addColorStop(0, 'rgb(205,205,205)'); gr.addColorStop(1, 'rgb(70,70,70)');
+      h.fillStyle = gr; h.beginPath(); h.moveTo(cx, cy - s / 2); h.lineTo(cx + s / 2, cy); h.lineTo(cx, cy + s / 2); h.lineTo(cx - s / 2, cy); h.closePath(); h.fill();
+      g.strokeStyle = 'rgba(40,38,34,.45)'; g.lineWidth = 2; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(cx, cy - s / 2); g.lineTo(cx + s / 2, cy); g.lineTo(cx, cy + s / 2); g.lineTo(cx - s / 2, cy); g.closePath(); g.stroke(); g.setLineDash([]);
+    }
+    blotches(g, W, W, 40, '60,50,40', .05, .15, 20, 90);
+    return { map: (() => { const t = linTex(cc); t.colorSpace = THREE.SRGBColorSpace; return t; })(), normal: normalFromHeight(hc, 2.2), metal: linTex(mc) };
+  }
+  let rects = [];
+  if (variant === 'A') rects = [[16, 16, W - 32, W - 32]];
+  else if (variant === 'B') { const sx = R(0.4, 0.6) * W, sy = R(0.4, 0.6) * W; rects = [[14, 14, sx - 20, sy - 20], [sx + 6, 14, W - sx - 20, sy - 20], [14, sy + 6, sx - 20, W - sy - 20], [sx + 6, sy + 6, W - sx - 20, W - sy - 20]]; }
+  else { rects = [[14, 14, W - 28, W * 0.3], [14, W * 0.3 + 26, W - 28, W * 0.34], [14, W * 0.64 + 38, W - 28, W * 0.36 - 52]]; }
+  for (const [x, y, w, hh] of rects) {
+    h.fillStyle = 'rgb(150,150,150)'; h.fillRect(x, y, w, hh);
+    h.strokeStyle = 'rgb(25,25,25)'; h.lineWidth = 7; h.strokeRect(x, y, w, hh);
+    h.strokeStyle = 'rgb(175,175,175)'; h.lineWidth = 3; h.strokeRect(x + 8, y + 8, w - 16, hh - 16);
+    g.strokeStyle = 'rgba(12,12,12,.85)'; g.lineWidth = 5; g.strokeRect(x, y, w, hh);
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x + 5, y + hh - 5); g.lineTo(x + 5, y + 5); g.lineTo(x + w - 5, y + 5); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.moveTo(x + w - 5, y + 5); g.lineTo(x + w - 5, y + hh - 5); g.lineTo(x + 5, y + hh - 5); g.stroke();
+    // rivets along the plate edges
+    const n = Math.max(2, Math.round(w / 70));
+    for (let k = 0; k <= n; k++) for (const yy of [y + 16, y + hh - 16]) {
+      const xx = x + 16 + (w - 32) * k / n; rivet(g, xx, yy, 4.5);
+      const gr = h.createRadialGradient(xx, yy, 0, xx, yy, 6); gr.addColorStop(0, 'rgb(240,240,240)'); gr.addColorStop(1, 'rgba(150,150,150,0)'); h.fillStyle = gr; h.fillRect(xx - 6, yy - 6, 12, 12);
+    }
+    // paint chips along edges reveal bare metal
+    for (let k = 0; k < 18; k++) {
+      const side = (rnd() * 4) | 0, t = rnd();
+      const cx = side === 0 ? x + t * w : side === 1 ? x + w : side === 2 ? x + t * w : x, cy = side === 0 ? y : side === 1 ? y + t * hh : side === 2 ? y + hh : y + t * hh;
+      const rx = R(3, 13), ry = R(2, 6), a = R(0, 3);
+      g.fillStyle = '#a7a7a3'; g.beginPath(); g.ellipse(cx, cy, rx, ry, a, 0, 7); g.fill();
+      m.fillStyle = '#fff'; m.beginPath(); m.ellipse(cx, cy, rx, ry, a, 0, 7); m.fill();
+      h.fillStyle = 'rgb(105,105,105)'; h.beginPath(); h.ellipse(cx, cy, rx, ry, a, 0, 7); h.fill();
+    }
+  }
+  if (variant === 'A') { const y0 = R(0.55, 0.7) * W; g.strokeStyle = 'rgba(12,12,12,.7)'; g.lineWidth = 3; g.beginPath(); g.moveTo(16, y0); g.lineTo(W * 0.42, y0); g.lineTo(W * 0.5, W - 16); g.stroke(); h.strokeStyle = 'rgb(40,40,40)'; h.lineWidth = 4; h.beginPath(); h.moveTo(16, y0); h.lineTo(W * 0.42, y0); h.lineTo(W * 0.5, W - 16); h.stroke(); }
+  if (variant === 'C') for (let k = 0; k < 7; k++) { const x = W * 0.22 + k * W * 0.08, y = W * 0.38; g.fillStyle = 'rgba(10,10,10,.85)'; g.fillRect(x, y, W * 0.04, W * 0.2); h.fillStyle = 'rgb(15,15,15)'; h.fillRect(x, y, W * 0.04, W * 0.2); }
+  scratches(g, W, W, 90, '255,255,255', .28); scratches(g, W, W, 50, '0,0,0', .25);
+  for (let i = 0; i < 60; i++) { h.strokeStyle = 'rgba(90,90,90,.5)'; h.lineWidth = 1; const x = rnd() * W, y = rnd() * W, a = rnd() * 3; h.beginPath(); h.moveTo(x, y); h.lineTo(x + Math.cos(a) * 40, y + Math.sin(a) * 40); h.stroke(); }
+  noiseFill(g, W, W, 12);
+  g.fillStyle = 'rgba(20,20,20,.5)'; g.font = 'bold 20px monospace'; g.fillText((variant === 'C' ? 'HYD-' : 'IV-') + ((seed * 37) % 90 + 10), W - 110, W - 46);
+  const map = linTex(cc); map.colorSpace = THREE.SRGBColorSpace;
+  return { map, normal: normalFromHeight(hc, 3.2), metal: linTex(mc) };
+}
+
 const TEX = {};
 function buildBaseTextures() {
+  TEX.pA = panelSet(11, 'A'); TEX.pB = panelSet(23, 'B'); TEX.pC = panelSet(37, 'C'); TEX.pQ = panelSet(5, 'Q');
   TEX.panel = canvasTex(512, 512, (g, w, h) => {
     g.fillStyle = '#e4e4e2'; g.fillRect(0, 0, w, h);
     blotches(g, w, h, 50, '0,0,0', .03, .09, 30, 120);
@@ -684,11 +778,12 @@ const SFX = {
       this.osc('sine', 140, 60, 0.12, 0.4 * p);
       return;
     }
-    this.osc('sine', 150 * heavy, 38, 0.28, 0.95 * p);
-    this.osc('sine', 75, 30, 0.4, 0.6 * p);
-    this.nz(0.16, 0.9 * p, 'bandpass', 2400, 500, 0.9);
-    this.nz(0.05, 0.7 * p, 'highpass', 5000, 0, 0.7);
-    const base = rand(260, 420);
+    this.osc('sine', 115 * heavy, 30, 0.36, 1.0 * p);
+    this.osc('sine', 55, 24, 0.55, 0.7 * p);
+    this.osc('triangle', 90, 40, 0.25, 0.25 * p);
+    this.nz(0.2, 0.9 * p, 'bandpass', 1800, 380, 0.9);
+    this.nz(0.05, 0.6 * p, 'highpass', 4500, 0, 0.7);
+    const base = rand(170, 290);
     [1, 2.31, 3.77, 5.12].forEach((r, i) => this.osc(i % 2 ? 'square' : 'triangle', base * r, base * r * 0.97, 0.45 - i * 0.07, 0.09 * p / (i + 1)));
   },
   whoosh(power) {
@@ -696,7 +791,8 @@ const SFX = {
     this.nz(0.2, 0.22 * power, 'bandpass', 380, 1700, 2.2, null, 0, 0.05);
     this.osc('sawtooth', 220, 110, 0.18, 0.035 * power);
   },
-  step(v = 1) { if (!this.ready) return; this.osc('sine', 85, 40, 0.12, 0.22 * v); this.nz(0.06, 0.12 * v, 'lowpass', 600, 200); },
+  step(v = 1) { if (!this.ready) return; this.osc('sine', 62, 28, 0.22, 0.38 * v); this.nz(0.1, 0.18 * v, 'lowpass', 500, 120); this.osc('triangle', rand(300, 500), 200, 0.06, 0.03 * v); },
+  hiss(v = 1) { if (!this.ready) return; this.nz(0.35, 0.16 * v, 'highpass', 3500, 6000, 0.5, null, 0, 0.02); },
   clank(v = 1) { if (!this.ready) return; const b = rand(500, 1300); this.osc('triangle', b, b * 0.92, 0.25, 0.12 * v); this.osc('square', b * 2.7, b * 2.5, 0.12, 0.03 * v); this.nz(0.05, 0.16 * v, 'highpass', 2500, 0); },
   bell(times = 1) {
     if (!this.ready) return;
@@ -863,13 +959,13 @@ const FX = {
   },
   burst(p, color = [3, 1.6, 0.6], size = 0.9) {
     this.glow.emit(p.x, p.y, p.z, 0, 0, 0, 0.16, size, size * 2.2, color[0], color[1], color[2], 1);
-    for (let i = 0; i < 6; i++) this.glow.emit(p.x, p.y, p.z, rand(-3, 3), rand(-1, 4), rand(-3, 3), rand(0.25, 0.6), 0.08, 0.02, color[0], color[1], color[2], 1, 9, 1);
+    for (let i = 0; i < 6; i++) this.glow.emit(p.x, p.y, p.z, rand(-3, 3), rand(-1, 4), rand(-3, 3), rand(0.25, 0.6), 0.08, 0.02, color[0], color[1], color[2], 1, 6, 1);
   },
   puff(p, n = 6, dark = 0.12, size = 0.6, up = 0.6, spread = 0.4, life = 1.6) {
     for (let i = 0; i < n; i++) this.smoke.emit(p.x + rand(-.1, .1), p.y + rand(-.1, .1), p.z + rand(-.1, .1), rand(-spread, spread), rand(0.2, 1) * up, rand(-spread, spread), life * rand(0.6, 1.3), size * 0.5, size * rand(1.6, 2.6), dark, dark, dark * 1.05, 0.55, -0.15, 1.2);
   },
   oil(p, dir, n = 10) {
-    for (let i = 0; i < n; i++) this.smoke.emit(p.x, p.y, p.z, dir.x * rand(1, 4) + rand(-1, 1), rand(0.5, 3), dir.z * rand(1, 4) + rand(-1, 1), rand(0.4, 0.8), 0.05, 0.03, 0.02, 0.018, 0.012, 0.95, 9.8, 0.5);
+    for (let i = 0; i < n; i++) this.smoke.emit(p.x, p.y, p.z, dir.x * rand(1, 4) + rand(-1, 1), rand(0.5, 3), dir.z * rand(1, 4) + rand(-1, 1), rand(0.5, 0.9), 0.05, 0.03, 0.02, 0.018, 0.012, 0.95, 6.5, 0.5);
   },
   flash(p, color, intensity = 30, dist = 7) {
     const l = this.lights[this.li]; this.li = (this.li + 1) % this.lights.length;
@@ -884,7 +980,7 @@ const FX = {
       const o = i * 10;
       if (sp[o + 6] <= 0) { P[i * 6] = P[i * 6 + 3] = 0; P[i * 6 + 1] = P[i * 6 + 4] = -50; P[i * 6 + 2] = P[i * 6 + 5] = 0; continue; }
       sp[o + 6] -= dt;
-      sp[o + 4] -= 12 * dt;
+      sp[o + 4] -= 8 * dt;
       const dr = Math.exp(-1.5 * dt); sp[o + 3] *= dr; sp[o + 5] *= dr;
       sp[o] += sp[o + 3] * dt; sp[o + 1] += sp[o + 4] * dt; sp[o + 2] += sp[o + 5] * dt;
       const fl = Arena.groundAt(sp[o], sp[o + 2]);
@@ -935,7 +1031,7 @@ const Debris = {
     for (const d of this.list) {
       if (d.sleep) continue;
       d.t += dt;
-      d.vel.y -= 14 * dt;
+      d.vel.y -= (GRAV + 1) * dt;
       d.mesh.position.addScaledVector(d.vel, dt);
       const ax = d.ang; d.mesh.rotateX(ax.x * dt); d.mesh.rotateY(ax.y * dt); d.mesh.rotateZ(ax.z * dt);
       const p = d.mesh.position;
@@ -981,7 +1077,7 @@ class Trail {
       fragmentShader: `uniform vec3 uC; uniform float uK; varying float vA; void main(){ gl_FragColor=vec4(uC*vA*uK,1.0); }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
-    this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 7; scene.add(this.mesh);
+    this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 7; scene.add(this.mesh); this.mesh.userData.noAO = true;
     this.k = 0;
   }
   push(p, on, dt) {
@@ -1004,89 +1100,138 @@ function rumble(strength, ms) {
 
 // ---- 20_robots.js
 // ============================================================================
-// ROBOTS: roster + procedural rig builder (joints are IK-driven at runtime)
+// ROBOTS: roster + procedural mech builder (joints are IK-driven at runtime)
+// Each builder follows one concept sheet: silhouette first, then plates, then mechanics.
 // ============================================================================
 const ROBOTS = [
   {
     id: 'bulwark', name: 'Bulwark', cls: 'Heavyweight · Siege frame',
-    bio: 'A demolition-crew chassis wrapped in slab armor. Slow to start, impossible to move, and every right hand lands like a wrecking ball.',
-    stats: { power: 8, speed: 4, armor: 9, reach: 6, stamina: 6 },
-    colors: { primary: 0xd2d4cf, secondary: 0x858b87, dark: 0x26292c, accent: 0xb4ff3a, eye: 0xb4ff3a },
-    dims: { hipH: 1.16, hipW: 0.24, thigh: 0.58, shin: 0.58, ankle: 0.13, spineY: 0.14, chestY: 0.44, shX: 0.66, shY: 0.24, upper: 0.52, fore: 0.58, neckY: 0.42, neckZ: 0.08, stanceW: 0.36, hunch: 0 },
-    style: { torso: 'slab', head: 'dome', shoulder: 'slab', arm: 'shield', fist: 'block', leg: 'block', foot: 'wheel' },
+    bio: 'A demolition-crew chassis under a roof of white slab armor, built around a black sensor dome. Slow to start, impossible to move, and every right hand lands like a wrecking ball.',
+    stats: { power: 8, speed: 4, armor: 9, reach: 7, stamina: 6 },
+    colors: { primary: 0xd9dbd6, secondary: 0x8d928e, dark: 0x2b2e31, accent: 0xc8ff2e, eye: 0xc8ff2e },
+    dims: { hipH: 1.0, hipW: 0.27, thigh: 0.5, shin: 0.52, ankle: 0.17, spineY: 0.16, chestY: 0.5, shX: 0.78, shY: 0.26, upper: 0.6, fore: 0.68, neckY: 0.5, neckZ: 0.12, stanceW: 0.42, hunch: 0.1 },
+    build: 'bulwark',
     persona: { range: 0.92, body: 0.3, aggr: 0.9, combos: [['jab', 'cross'], ['jab', 'jab', 'cross'], ['cross', 'hook'], ['hook', 'upper'], ['jab', 'body:cross']] },
   },
   {
     id: 'onyx', name: 'Onyx', cls: 'Brawler · Gorilla frame',
-    bio: 'Built for deep-sea salvage, retired for punching. Long arms, a low centre of gravity and a sensor cluster buried where you can barely hit it.',
+    bio: 'Built for deep-sea salvage, retired for punching. Round charcoal hull, arms that hang past its knees, and a sensor head buried in its collar where you can barely reach it.',
     stats: { power: 9, speed: 5, armor: 7, reach: 9, stamina: 6 },
-    colors: { primary: 0x3b3e42, secondary: 0x2b2d31, dark: 0x16171a, accent: 0xdfe6ea, eye: 0xff5a1f },
-    dims: { hipH: 1.0, hipW: 0.26, thigh: 0.5, shin: 0.5, ankle: 0.12, spineY: 0.14, chestY: 0.48, shX: 0.7, shY: 0.2, upper: 0.62, fore: 0.68, neckY: 0.34, neckZ: 0.22, stanceW: 0.4, hunch: 0.16 },
-    style: { torso: 'pod', head: 'sunken', shoulder: 'orb', arm: 'pod', fist: 'round', leg: 'pod', foot: 'round' },
+    colors: { primary: 0x3d4044, secondary: 0x33363a, dark: 0x1a1b1e, accent: 0xd9e0e4, eye: 0xff6a1f },
+    dims: { hipH: 1.0, hipW: 0.3, thigh: 0.5, shin: 0.5, ankle: 0.14, spineY: 0.14, chestY: 0.52, shX: 0.82, shY: 0.2, upper: 0.7, fore: 0.8, neckY: 0.44, neckZ: 0.16, stanceW: 0.45, hunch: 0.2 },
+    build: 'onyx',
     persona: { range: 1.0, body: 0.4, aggr: 1.1, combos: [['hook', 'hook'], ['jab', 'hook'], ['body:hook', 'upper'], ['cross', 'hook', 'upper'], ['jab', 'cross']] },
   },
   {
+    id: 'torque', name: 'Torque', cls: 'Rush-down · Monowheel frame',
+    bio: 'Riot-control unit that traded its legs for a single drive wheel. Carries two door-sized forearm shields and closes distance faster than anything else in the league.',
+    stats: { power: 6, speed: 9, armor: 7, reach: 6, stamina: 7 },
+    colors: { primary: 0xe3e4df, secondary: 0x9a9e9a, dark: 0x2a2c2e, accent: 0xd4ff1e, eye: 0xd4ff1e },
+    dims: { hipH: 1.2, hipW: 0.17, thigh: 0.32, shin: 0.32, ankle: 0.58, spineY: 0.16, chestY: 0.48, shX: 0.66, shY: 0.26, upper: 0.56, fore: 0.6, neckY: 0.44, neckZ: 0.06, stanceW: 0.13, hunch: 0.06, wheeled: true, footFwd: 0 },
+    build: 'torque',
+    persona: { range: 0.95, body: 0.3, aggr: 1.15, combos: [['jab', 'jab', 'cross'], ['jab', 'hook'], ['cross', 'hook', 'cross'], ['body:jab', 'hook'], ['jab', 'cross', 'upper']] },
+  },
+  {
     id: 'spectra', name: 'Spectra', cls: 'Showman · Outfighter',
-    bio: 'A former arena mascot reflashed for combat. Lights up like a pinball table, moves like one too, and never stops throwing the jab.',
+    bio: 'A former arena mascot reflashed for combat. Horned helmet, a molten gauntlet on the right hand, and neon panels that light up like a pinball table. Never stops throwing the jab.',
     stats: { power: 5, speed: 9, armor: 5, reach: 7, stamina: 8 },
-    colors: { primary: 0x24335f, secondary: 0x33467c, dark: 0x12141c, accent: 0x34ff6e, eye: 0xff2f5a, glowArm: 0xff4a12, glowLegL: 0x3d6bff, glowLegR: 0xa04dff },
-    dims: { hipH: 1.18, hipW: 0.22, thigh: 0.6, shin: 0.6, ankle: 0.12, spineY: 0.14, chestY: 0.42, shX: 0.58, shY: 0.24, upper: 0.54, fore: 0.58, neckY: 0.4, neckZ: 0.04, stanceW: 0.33, hunch: 0 },
-    style: { torso: 'armored', head: 'horned', shoulder: 'layered', arm: 'gauntlet', fist: 'stud', leg: 'armored', foot: 'wheel' },
+    colors: { primary: 0x1f2c54, secondary: 0x2c3d6e, dark: 0x111420, accent: 0x34ff6e, eye: 0xff3048, glowArm: 0xff4410, glowLegL: 0x2f6bff, glowLegR: 0xa04dff, glowPink: 0xff2fb4 },
+    dims: { hipH: 1.2, hipW: 0.23, thigh: 0.6, shin: 0.62, ankle: 0.14, spineY: 0.16, chestY: 0.46, shX: 0.62, shY: 0.25, upper: 0.56, fore: 0.6, neckY: 0.44, neckZ: 0.05, stanceW: 0.34, hunch: 0.02 },
+    build: 'spectra',
     persona: { range: 1.05, body: 0.25, aggr: 1.0, combos: [['jab', 'jab'], ['jab', 'jab', 'cross'], ['jab', 'cross', 'hook'], ['jab', 'body:jab', 'cross'], ['jab', 'cross', 'jab', 'upper']] },
   },
   {
     id: 'belljar', name: 'Belljar', cls: 'Tank · Counterpuncher',
-    bio: 'A bomb-disposal unit that kept its blast dome. Patient, padded and patched together from three different factories. Waits for you to miss.',
+    bio: 'A bomb-disposal unit that kept its blast dome. Quilted padding, clear riot guards and a tank tread for a right foot. Patient, patched together, and waiting for you to miss.',
     stats: { power: 7, speed: 5, armor: 8, reach: 6, stamina: 8 },
-    colors: { primary: 0x8b8e8a, secondary: 0x6b7a3b, tertiary: 0x4b70a0, dark: 0x2a2b29, brown: 0x6b4a33, accent: 0x84a9d6, eye: 0xff2a1a },
-    dims: { hipH: 1.14, hipW: 0.27, thigh: 0.6, shin: 0.56, ankle: 0.13, spineY: 0.14, chestY: 0.4, shX: 0.62, shY: 0.2, upper: 0.52, fore: 0.56, neckY: 0.36, neckZ: 0.02, stanceW: 0.38, hunch: 0 },
-    style: { torso: 'barrel', head: 'bell', shoulder: 'pad', arm: 'padded', fist: 'block', leg: 'heavy', foot: 'tread' },
+    colors: { primary: 0x8e918d, secondary: 0x6c7a3a, tertiary: 0x4a6f9e, dark: 0x2a2b29, brown: 0x6a4630, accent: 0x84a9d6, eye: 0xff2a1a },
+    dims: { hipH: 1.2, hipW: 0.28, thigh: 0.62, shin: 0.58, ankle: 0.15, spineY: 0.16, chestY: 0.4, shX: 0.62, shY: 0.2, upper: 0.54, fore: 0.58, neckY: 0.34, neckZ: 0.02, stanceW: 0.4, hunch: 0.02 },
+    build: 'belljar',
     persona: { range: 0.95, body: 0.35, aggr: 0.7, counter: 1, combos: [['jab', 'cross'], ['cross', 'hook'], ['body:hook', 'hook'], ['upper', 'cross'], ['jab', 'upper']] },
   },
   {
     id: 'warden', name: 'Warden OD-9', cls: 'Technician · Military frame',
-    bio: 'Decommissioned perimeter unit, still running its targeting firmware. Clean, efficient combinations and a claw grip that never quite lets go of a grudge.',
+    bio: 'Decommissioned perimeter unit still running its targeting firmware. Olive plate over a skeletal frame, a single orange eye, and claws that never quite let go of a grudge.',
     stats: { power: 7, speed: 7, armor: 6, reach: 8, stamina: 7 },
-    colors: { primary: 0x5d6a2a, secondary: 0x47511f, dark: 0x16181a, accent: 0xe9f2ff, eye: 0xff6a12 },
-    dims: { hipH: 1.24, hipW: 0.23, thigh: 0.63, shin: 0.62, ankle: 0.12, spineY: 0.14, chestY: 0.42, shX: 0.62, shY: 0.24, upper: 0.57, fore: 0.62, neckY: 0.4, neckZ: 0.04, stanceW: 0.34, hunch: 0.04 },
-    style: { torso: 'plated', head: 'sentinel', shoulder: 'plate', arm: 'rail', fist: 'claw', leg: 'plated', foot: 'boot' },
+    colors: { primary: 0x5f6b28, secondary: 0x4a5420, dark: 0x16181a, accent: 0xeef4ff, eye: 0xff6a12 },
+    dims: { hipH: 1.26, hipW: 0.24, thigh: 0.64, shin: 0.64, ankle: 0.16, spineY: 0.16, chestY: 0.44, shX: 0.66, shY: 0.25, upper: 0.6, fore: 0.64, neckY: 0.42, neckZ: 0.06, stanceW: 0.36, hunch: 0.05 },
+    build: 'warden',
     persona: { range: 1.0, body: 0.35, aggr: 1.0, combos: [['jab', 'cross', 'hook'], ['jab', 'body:cross', 'hook'], ['jab', 'cross', 'upper'], ['hook', 'cross'], ['jab', 'jab', 'cross', 'hook']] },
   },
   {
     id: 'mire', name: 'Mire', cls: 'Swarmer · Hunchback',
-    bio: 'Nobody admits to building it. Mire fights bent double, swings from the floor and only seems to get faster the more of its plating it loses.',
+    bio: 'Nobody admits to building it. Mire fights bent double behind two boulder shoulders, swings claws from the floor and only seems to get faster the more plating it loses.',
     stats: { power: 8, speed: 7, armor: 5, reach: 8, stamina: 7 },
-    colors: { primary: 0x404835, secondary: 0x2c3227, dark: 0x131511, accent: 0xc6d63e, eye: 0xf0ff2a },
-    dims: { hipH: 1.04, hipW: 0.26, thigh: 0.52, shin: 0.52, ankle: 0.12, spineY: 0.12, chestY: 0.46, shX: 0.72, shY: 0.22, upper: 0.62, fore: 0.72, neckY: 0.3, neckZ: 0.3, stanceW: 0.42, hunch: 0.32 },
-    style: { torso: 'hunch', head: 'cowl', shoulder: 'dome', arm: 'jag', fist: 'claw', leg: 'jag', foot: 'claw' },
+    colors: { primary: 0x434b39, secondary: 0x2f3529, dark: 0x141612, accent: 0xb9c84a, eye: 0xf2ff2a },
+    dims: { hipH: 1.04, hipW: 0.28, thigh: 0.54, shin: 0.54, ankle: 0.13, spineY: 0.12, chestY: 0.46, shX: 0.78, shY: 0.22, upper: 0.66, fore: 0.76, neckY: 0.3, neckZ: 0.32, stanceW: 0.46, hunch: 0.34 },
+    build: 'mire',
     persona: { range: 0.88, body: 0.45, aggr: 1.25, combos: [['hook', 'hook', 'upper'], ['body:hook', 'body:hook', 'upper'], ['upper', 'hook'], ['jab', 'hook', 'hook'], ['cross', 'upper']] },
   },
 ];
 const ROBOT = id => ROBOTS.find(r => r.id === id);
 
-function makeRobotMats(c, dormant) {
-  const paint = (color, o = {}) => new THREE.MeshPhysicalMaterial(Object.assign({ color, metalness: 0.35, roughness: 0.62, map: TEX.panel, roughnessMap: TEX.grunge, clearcoat: 0.5, clearcoatRoughness: 0.32 }, o));
-  const metal = (color, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, metalness: 0.9, roughness: 0.38, roughnessMap: TEX.grunge }, o));
-  const glow = (color, i = 2.6) => new THREE.MeshStandardMaterial({ color: 0x111111, emissive: dormant ? 0x000000 : color, emissiveIntensity: i, roughness: 0.4, metalness: 0.2 });
-  const m = {
-    primary: paint(c.primary), secondary: paint(c.secondary), dark: metal(c.dark, { map: TEX.panel }),
-    joint: metal(0x1b1d1f, { roughness: 0.3 }), chrome: metal(0xcfd3d6, { roughness: 0.16, roughnessMap: null }),
-    rubber: new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.92, metalness: 0 }),
-    glass: new THREE.MeshPhysicalMaterial({ color: 0x0b0d10, metalness: 0.2, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.03 }),
-    glow: glow(c.accent, 2.2), eye: glow(c.eye, 6),
+// dirt that collects low on the chassis + world-space grime blotches
+function applyGrime(m) {
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uGround = { value: RING_Y };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;').replace('#include <project_vertex>', '#include <project_vertex>\nvGW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW; uniform float uGround;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float gh = clamp((vGW.y - uGround) / 1.3, 0.0, 1.0);
+        vec3 gp = floor(vGW * 7.0);
+        float gn = fract(sin(dot(gp, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+        diffuseColor.rgb *= mix(0.5 + 0.18 * gn, 1.0, smoothstep(0.0, 1.0, gh)) * (0.93 + 0.07 * gn);`);
   };
-  if (c.tertiary) m.tertiary = paint(c.tertiary);
-  if (c.brown) m.brown = paint(c.brown, { metalness: 0.2, roughness: 0.75 });
-  if (c.glowArm) { m.glowArm = glow(c.glowArm, 1.6); m.glowLegL = glow(c.glowLegL, 2.2); m.glowLegR = glow(c.glowLegR, 2.2); }
+  m.customProgramCacheKey = () => 'grime1';
   return m;
 }
 
-// Build one robot. Returns a rig object with named joints and armor lists per damage zone.
+function makeRobotMats(c, dormant) {
+  const paint = (color, set = TEX.pA, o = {}) => applyGrime(new THREE.MeshPhysicalMaterial(Object.assign({
+    color, map: set.map, normalMap: set.normal, normalScale: new THREE.Vector2(0.9, 0.9), metalness: 1, metalnessMap: set.metal,
+    roughness: 0.62, roughnessMap: TEX.grunge, clearcoat: 0.35, clearcoatRoughness: 0.45,
+  }, o)));
+  const metal = (color, o = {}) => applyGrime(new THREE.MeshStandardMaterial(Object.assign({ color, metalness: 0.88, roughness: 0.42, roughnessMap: TEX.grunge, map: TEX.pC.map, normalMap: TEX.pC.normal, normalScale: new THREE.Vector2(0.6, 0.6) }, o)));
+  const glow = (color, i = 2.6) => new THREE.MeshStandardMaterial({ color: 0x111111, emissive: dormant ? 0x000000 : color, emissiveIntensity: i, roughness: 0.35, metalness: 0.2 });
+  const m = {
+    primary: paint(c.primary, TEX.pA), secondary: paint(c.secondary, TEX.pB), dark: metal(c.dark),
+    joint: new THREE.MeshStandardMaterial({ color: 0x1c1e20, metalness: 0.92, roughness: 0.32, roughnessMap: TEX.grunge }),
+    chrome: new THREE.MeshStandardMaterial({ color: 0xd4d8db, metalness: 1, roughness: 0.14 }),
+    rubber: new THREE.MeshStandardMaterial({ color: 0x0f0f0f, roughness: 0.93, metalness: 0, normalMap: TEX.pC.normal, normalScale: new THREE.Vector2(0.4, 0.4) }),
+    cable: new THREE.MeshStandardMaterial({ color: 0x121212, roughness: 0.6, metalness: 0.1 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0x07090c, metalness: 0.3, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.02 }),
+    clear: new THREE.MeshPhysicalMaterial({ color: 0xcfe2ea, metalness: 0, roughness: 0.12, transparent: true, opacity: 0.32, clearcoat: 1, depthWrite: false, side: THREE.DoubleSide }),
+    glow: glow(c.accent, 4.2), eye: glow(c.eye, 9),
+  };
+  if (c.tertiary) m.tertiary = paint(c.tertiary, TEX.pB);
+  if (c.brown) m.brown = applyGrime(new THREE.MeshStandardMaterial({ color: c.brown, roughness: 0.78, metalness: 0.05, map: TEX.pQ.map, normalMap: TEX.pQ.normal, normalScale: new THREE.Vector2(0.5, 0.5) }));
+  m.fabric = applyGrime(new THREE.MeshStandardMaterial({ color: c.primary, roughness: 0.92, metalness: 0, map: TEX.pQ.map, normalMap: TEX.pQ.normal, normalScale: new THREE.Vector2(1.3, 1.3) }));
+  if (c.glowArm) { m.glowArm = glow(c.glowArm, 3.2); m.glowLegL = glow(c.glowLegL, 4); m.glowLegR = glow(c.glowLegR, 4); m.glowPink = glow(c.glowPink, 4); }
+  m.clear.userData.noShadow = true;
+  return m;
+}
+
+// ---------------------------------------------------------------- dynamic hydraulics
+const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pd = new THREE.Vector3(), _pY = new THREE.Vector3(0, 1, 0);
+function updatePistons(R) {
+  if (!R.pistons.length) return;
+  R.root.updateMatrixWorld();
+  for (const p of R.pistons) {
+    _pa.copy(p.aOff).applyMatrix4(p.a.matrixWorld); _pb.copy(p.bOff).applyMatrix4(p.b.matrixWorld);
+    R.root.worldToLocal(_pa); R.root.worldToLocal(_pb);
+    _pd.subVectors(_pb, _pa); const len = Math.max(0.01, _pd.length()); _pd.divideScalar(len);
+    p.sleeve.quaternion.setFromUnitVectors(_pY, _pd); p.rod.quaternion.copy(p.sleeve.quaternion);
+    p.sleeve.position.copy(_pa).addScaledVector(_pd, len * 0.3); p.sleeve.scale.set(1, len * 0.6, 1);
+    p.rod.position.copy(_pa).addScaledVector(_pd, len * 0.74); p.rod.scale.set(1, len * 0.52, 1);
+  }
+}
+
+// ---------------------------------------------------------------- builder
 function buildRobot(def, opts = {}) {
-  const d = def.dims, st = def.style;
+  const d = def.dims;
   const m = makeRobotMats(opts.colors || def.colors, opts.dormant);
   const R = {
-    def, dims: d, mats: m, armor: { head: [], core: [], armL: [], armR: [] }, glows: [], meshes: [],
+    def, dims: d, mats: m, armor: { head: [], core: [], armL: [], armR: [] }, glows: [], meshes: [], pistons: [],
     root: new THREE.Group(), body: new THREE.Group(), spine: new THREE.Group(), chest: new THREE.Group(), neck: new THREE.Group(), head: new THREE.Object3D(),
     shL: new THREE.Object3D(), shR: new THREE.Object3D(), elL: new THREE.Object3D(), elR: new THREE.Object3D(), fistL: new THREE.Object3D(), fistR: new THREE.Object3D(),
     hipL: new THREE.Object3D(), hipR: new THREE.Object3D(), knL: new THREE.Object3D(), knR: new THREE.Object3D(), footL: new THREE.Group(), footR: new THREE.Group(),
@@ -1108,319 +1253,430 @@ function buildRobot(def, opts = {}) {
   const P = (parent, geo, mat, pos = [0, 0, 0], rot = [0, 0, 0], scl = null) => {
     const mesh = new THREE.Mesh(geo, mat); mesh.position.set(pos[0], pos[1], pos[2]); mesh.rotation.set(rot[0], rot[1], rot[2]);
     if (scl) mesh.scale.set(scl[0], scl[1], scl[2]);
-    mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); R.meshes.push(mesh); return mesh;
+    mesh.castShadow = !mat.userData.noShadow; mesh.receiveShadow = true; parent.add(mesh); R.meshes.push(mesh);
+    if (mat.emissiveIntensity > 0.5 && mat.emissive && mat.emissive.getHex() !== 0) R.glows.push(mesh);
+    return mesh;
   };
   const A = (zone, mesh) => { R.armor[zone].push(mesh); return mesh; };
-  const HP = Math.PI / 2;
+  const piston = (a, aOff, b, bOff, r = 0.045) => {
+    const sl = new THREE.Mesh(G.cyl(r, r, 1, 10), m.joint), rod = new THREE.Mesh(G.cyl(r * 0.55, r * 0.55, 1, 8), m.chrome);
+    sl.castShadow = rod.castShadow = true; R.root.add(sl, rod);
+    R.pistons.push({ a, aOff: V3(...aOff), b, bOff: V3(...bOff), sleeve: sl, rod });
+  };
+  const cable = (parent, pts, r = 0.025) => { const c = new THREE.CatmullRomCurve3(pts.map(p => V3(...p))); return P(parent, new THREE.TubeGeometry(c, 16, r, 6, false), m.cable); };
+  const bolts = (parent, list, r = 0.022) => list.forEach(p => P(parent, G.cyl(r, r, 0.02, 6), m.chrome, p, [Math.PI / 2, 0, 0]));
+  const HP = Math.PI / 2, C = R.chest, H = R.neck;
+  const sides = [1, -1];
+  const sh = s => s > 0 ? R.shL : R.shR, el = s => s > 0 ? R.elL : R.elR, fi = s => s > 0 ? R.fistL : R.fistR;
+  const hp = s => s > 0 ? R.hipL : R.hipR, kn = s => s > 0 ? R.knL : R.knR, ft = s => s > 0 ? R.footL : R.footR;
+  const zoneOf = s => s > 0 ? 'armL' : 'armR';
+  const U = d.upper, F = d.fore, T = d.thigh, S = d.shin;
 
-  // ---------------- pelvis (shared)
-  P(R.body, G.box(0.5, 0.26, 0.36, 0.06), m.dark, [0, 0, 0]);
-  P(R.body, G.box(0.36, 0.18, 0.12, 0.04), m.secondary, [0, -0.02, 0.18]);
-  for (const s of [1, -1]) { P(R.body, G.sph(0.11), m.joint, [s * d.hipW, -0.04, 0]); }
-  P(R.spine, G.cyl(0.16, 0.2, 0.22, 16), m.joint, [0, 0.06, 0]);
-
-  // ---------------- torso
-  const C = R.chest;
-  switch (st.torso) {
-    case 'slab':
-      P(C, G.box(0.92, 0.7, 0.6, 0.08), m.dark, [0, 0, -0.02]);
-      for (const s of [1, -1]) {
-        A('core', P(C, G.box(0.44, 0.5, 0.14, 0.04), m.primary, [s * 0.24, 0.06, 0.3], [0, -s * 0.22, 0]));
-        A('core', P(C, G.box(0.12, 0.52, 0.5, 0.04), m.secondary, [s * 0.5, 0, 0]));
-        R.glows.push(P(C, G.box(0.035, 0.24, 0.03, 0.01), m.glow, [s * 0.44, 0.1, 0.33], [0, -s * 0.22, 0]));
-        P(C, G.cyl(0.05, 0.05, 0.4, 10), m.chrome, [s * 0.2, 0.42, -0.42]);
-      }
-      P(C, G.sph(0.27), m.glass, [0, 0.04, 0.26], [0, 0, 0], [1, 1, 0.75]);
-      for (const [x, y] of [[0.1, 0.13], [-0.08, 0.16], [0.02, -0.05]]) R.glows.push(P(C, G.sph(0.022, 8, 6), m.glow, [x, y, 0.46]));
-      A('core', P(C, G.box(1.0, 0.12, 0.62, 0.04), m.primary, [0, 0.39, 0]));
-      P(C, G.box(0.68, 0.56, 0.28, 0.06), m.secondary, [0, 0.04, -0.4]);
-      P(C, G.cyl(0.25, 0.29, 0.2, 18), m.dark, [0, -0.44, 0]);
-      P(C, G.cyl(0.29, 0.25, 0.12, 18), m.joint, [0, -0.56, 0]);
-      break;
-    case 'pod':
-      P(C, G.sph(0.48, 28, 20), m.primary, [0, 0.04, 0], [0, 0, 0], [1.05, 0.95, 0.85]);
-      P(C, G.sph(0.36, 24, 16), m.secondary, [0, -0.44, 0.06]);
-      P(C, G.sph(0.44, 24, 16), m.dark, [0, 0.18, -0.3]);
-      A('core', P(C, G.box(0.5, 0.32, 0.12, 0.05), m.primary, [0, -0.06, 0.45], [-0.25, 0, 0]));
-      for (const s of [1, -1]) A('core', P(C, G.sph(0.2), m.secondary, [s * 0.46, -0.16, 0.18]));
-      P(C, G.tor(0.09, 0.022), m.chrome, [0.26, 0.2, 0.44], [0, 0.4, 0]);
-      for (const [x, y] of [[-0.24, 0.27], [-0.3, 0.2], [-0.18, 0.2]]) R.glows.push(P(C, G.sph(0.028, 8, 6), m.glow, [x, y, 0.42]));
-      break;
-    case 'armored':
-      P(C, G.box(0.84, 0.62, 0.54, 0.08), m.primary, [0, 0.08, 0]);
-      for (const s of [1, -1]) A('core', P(C, G.box(0.38, 0.32, 0.12, 0.04), m.secondary, [s * 0.2, 0.14, 0.29], [-0.12, -s * 0.2, 0]));
-      R.glows.push(P(C, G.box(0.2, 0.2, 0.03, 0.01), m.glow, [-0.21, 0.05, 0.35], [-0.12, 0.2, 0]));
-      R.glows.push(P(C, G.box(0.06, 0.18, 0.03, 0.01), m.glowArm, [0.27, 0.04, 0.34], [-0.12, -0.2, 0]));
-      for (let i = 0; i < 3; i++) A('core', P(C, G.box(0.42 - i * 0.04, 0.11, 0.38, 0.03), m.dark, [0, -0.28 - i * 0.12, 0.02]));
-      P(C, G.box(0.7, 0.12, 0.5, 0.04), m.dark, [0, 0.42, 0]);
-      P(C, G.box(0.6, 0.5, 0.26, 0.05), m.secondary, [0, 0.08, -0.36]);
-      for (const s of [1, -1]) P(C, G.box(0.05, 0.42, 0.3, 0.02), m.dark, [s * 0.18, 0.18, -0.52]);
-      break;
-    case 'barrel':
-      P(C, G.box(0.74, 0.58, 0.52, 0.12), m.primary, [0, 0, 0]);
-      A('core', P(C, G.box(0.3, 0.2, 0.05, 0.02), m.secondary, [0.18, 0.1, 0.27]));
-      A('core', P(C, G.box(0.18, 0.14, 0.05, 0.02), m.tertiary, [-0.2, -0.12, 0.27]));
-      for (const s of [1, -1]) P(C, G.box(0.06, 0.62, 0.56, 0.02), m.dark, [s * 0.16, 0, 0], [0, 0, s * 0.35]);
-      P(C, G.cyl(0.24, 0.27, 0.22, 16), m.dark, [0, -0.4, 0]);
-      for (const s of [1, -1]) P(C, G.cyl(0.035, 0.035, 0.32, 8), m.chrome, [s * 0.12, 0.38, 0]);
-      P(C, G.box(0.56, 0.44, 0.24, 0.06), m.secondary, [0, 0.02, -0.36]);
-      break;
-    case 'plated':
-      P(C, G.box(0.8, 0.56, 0.5, 0.06), m.primary, [0, 0.12, 0]);
-      P(C, G.box(0.52, 0.42, 0.4, 0.06), m.dark, [0, -0.32, 0]);
-      for (const s of [1, -1]) {
-        A('core', P(C, G.box(0.34, 0.3, 0.1, 0.03), m.secondary, [s * 0.22, 0.14, 0.27], [0, -s * 0.3, 0]));
-        R.glows.push(P(C, G.box(0.028, 0.24, 0.02, 0.01), m.glow, [s * 0.11, 0.2, 0.3], [0, 0, s * 0.62]));
-        A('core', P(C, G.box(0.18, 0.12, 0.1, 0.03), m.primary, [s * 0.12, -0.3, 0.22]));
-      }
-      R.glows.push(P(C, G.box(0.028, 0.3, 0.02, 0.01), m.glow, [0, -0.06, 0.29]));
-      P(C, G.box(0.56, 0.44, 0.24, 0.05), m.secondary, [0, 0.1, -0.34]);
-      break;
-    case 'hunch':
-      P(C, G.sph(0.5, 28, 20), m.primary, [0, 0.06, 0], [0, 0, 0], [1.15, 0.92, 1.0]);
-      P(C, G.sph(0.32, 20, 14), m.dark, [0, -0.4, 0.04]);
-      P(C, G.box(0.24, 0.12, 0.16, 0.03), m.dark, [0, 0.24, 0.42], [0.2, 0, 0]);
-      const rng = mulberry32(7);
-      for (let i = 0; i < 7; i++) {
-        const a = -1.1 + i * 0.36, y = (rng() - 0.3) * 0.4;
-        A('core', P(C, G.box(0.26, 0.2, 0.08, 0.02), m.secondary, [Math.sin(a) * 0.5, y, Math.cos(a) * 0.44], [rng() * 0.6 - 0.3, a, rng() * 0.8 - 0.4]));
-      }
-      for (let i = 0; i < 3; i++) P(C, G.cone(0.06, 0.3, 6), m.dark, [(i - 1) * 0.22, 0.42, -0.25], [-0.6, 0, (i - 1) * 0.3]);
-      R.glows.push(P(C, G.box(0.18, 0.025, 0.02, 0.01), m.glow, [0, -0.12, 0.47]));
-      break;
+  // shared mechanical underlayer: pelvis, spine column, joint balls, bare limb frames
+  P(R.body, G.box(0.52, 0.28, 0.38, 0.06), m.dark);
+  P(R.body, G.box(0.34, 0.18, 0.14, 0.04), m.secondary, [0, -0.04, 0.2]);
+  for (const s of sides) { P(R.body, G.sph(0.12, 16, 12), m.joint, [s * d.hipW, -0.04, 0]); P(R.body, G.box(0.14, 0.24, 0.3, 0.04), m.secondary, [s * (d.hipW + 0.12), -0.02, 0], [0, 0, s * 0.15]); }
+  P(R.spine, G.cyl(0.15, 0.19, 0.24, 16), m.joint, [0, 0.06, 0]);
+  for (let i = 0; i < 3; i++) P(R.spine, G.tor(0.17 - i * 0.01, 0.025, 6, 20), m.rubber, [0, -0.02 + i * 0.07, 0], [HP, 0, 0]);
+  for (const s of sides) {
+    P(sh(s), G.cyl(0.075, 0.075, U, 10), m.joint, [0, 0, U / 2], [HP, 0, 0]);
+    P(el(s), G.sph(0.13, 16, 12), m.joint);
+    P(hp(s), G.cyl(0.085, 0.085, T, 10), m.joint, [0, 0, T / 2], [HP, 0, 0]);
+    P(kn(s), G.sph(0.14, 16, 12), m.joint);
+    P(kn(s), G.cyl(0.075, 0.075, S, 10), m.joint, [0, 0, S / 2], [HP, 0, 0]);
   }
 
-  // ---------------- head
-  const H = R.neck;
-  P(H, G.cyl(0.07, 0.09, 0.16, 10), m.joint, [0, 0.02, 0]);
-  switch (st.head) {
-    case 'dome':
-      P(H, G.sph(0.21, 24, 16), m.glass, [0, 0.13, 0.02], [0, 0, 0], [1, 0.85, 1]);
-      R.glows.push(P(H, G.box(0.26, 0.035, 0.05, 0.01), m.eye, [0, 0.15, 0.19]));
-      A('head', P(H, G.box(0.34, 0.09, 0.32, 0.04), m.primary, [0, 0.27, -0.03]));
-      A('head', P(H, G.cyl(0.014, 0.014, 0.28, 6), m.chrome, [0.12, 0.38, -0.06]));
-      break;
-    case 'sunken':
-      P(H, G.sph(0.16), m.dark, [0, 0.0, 0.05]);
-      for (const [x, y] of [[0, 0.03], [0.05, -0.04], [-0.05, -0.04]]) R.glows.push(P(H, G.sph(0.03, 8, 6), m.eye, [x, y, 0.2]));
-      A('head', P(H, G.box(0.36, 0.1, 0.28, 0.04), m.primary, [0, 0.13, 0.02], [0.2, 0, 0]));
-      break;
-    case 'horned':
-      P(H, G.box(0.32, 0.29, 0.34, 0.08), m.primary, [0, 0.15, 0]);
-      R.glows.push(P(H, G.box(0.28, 0.06, 0.04, 0.015), m.eye, [0, 0.16, 0.17]));
-      P(H, G.box(0.22, 0.1, 0.16, 0.03), m.dark, [0, 0.02, 0.1]);
-      P(H, G.box(0.04, 0.1, 0.3, 0.015), m.dark, [0, 0.32, 0]);
-      for (const s of [1, -1]) A('head', P(H, G.cone(0.05, 0.34, 8), m.secondary, [s * 0.13, 0.4, -0.02], [-0.15, 0, -s * 0.4]));
-      break;
-    case 'bell': {
-      const pts = [[0.001, 0.0], [0.42, 0.0], [0.58, 0.06], [0.62, 0.15], [0.56, 0.25], [0.42, 0.32], [0.2, 0.36], [0.001, 0.37]].map(p => new THREE.Vector2(p[0], p[1]));
-      const bell = A('head', P(H, new THREE.LatheGeometry(pts, 36), m.primary, [0, 0.16, -0.02]));
-      bell.material = m.primary;
-      P(H, G.box(0.4, 0.16, 0.3, 0.04), m.dark, [0, 0.1, 0.06]);
-      R.glows.push(P(H, G.sph(0.045, 10, 8), m.eye, [0, 0.1, 0.22]));
-      P(H, G.box(0.14, 0.05, 0.02, 0.01), m.tertiary, [0.18, 0.38, 0.38], [-0.5, 0.3, 0]);
-      P(H, G.box(0.1, 0.06, 0.02, 0.01), m.secondary, [-0.26, 0.32, 0.36], [-0.4, -0.5, 0]);
-      break;
-    }
-    case 'sentinel':
-      P(H, G.box(0.3, 0.3, 0.34, 0.1), m.primary, [0, 0.14, 0.02]);
-      P(H, G.box(0.18, 0.2, 0.05, 0.02), m.dark, [0, 0.12, 0.18]);
-      R.glows.push(P(H, G.sph(0.042, 10, 8), m.eye, [0, 0.16, 0.21]));
-      R.glows.push(P(H, G.box(0.02, 0.2, 0.02, 0.005), m.glow, [0, 0.2, 0.19], [0.0, 0, 0]));
-      for (const s of [1, -1]) A('head', P(H, G.cyl(0.012, 0.012, 0.36, 6), m.dark, [s * 0.08, 0.42, -0.06], [0, 0, -s * 0.1]));
-      A('head', P(H, G.box(0.32, 0.08, 0.2, 0.03), m.secondary, [0, 0.3, -0.04]));
-      break;
-    case 'cowl':
-      P(H, G.box(0.32, 0.2, 0.3, 0.06), m.dark, [0, 0.0, 0.04]);
-      R.glows.push(P(H, G.sph(0.07, 12, 10), m.eye, [0, 0.0, 0.2]));
-      A('head', P(H, G.box(0.42, 0.12, 0.34, 0.04), m.secondary, [0, 0.12, 0.0], [0.3, 0, 0]));
-      break;
-  }
-
-  // ---------------- shoulders (fixed to chest), arms (IK joints)
-  for (const s of [1, -1]) {
-    const side = s > 0 ? 'L' : 'R', zone = s > 0 ? 'armL' : 'armR';
-    const pad = new THREE.Group(); pad.position.set(s * d.shX, d.shY + 0.04, 0); C.add(pad);
-    P(pad, G.sph(0.16), m.joint, [0, -0.04, 0]);
-    switch (st.shoulder) {
-      case 'slab':
-        A(zone, P(pad, G.box(0.3, 0.52, 0.6, 0.05), m.primary, [s * 0.16, 0.02, 0], [0, 0, -s * 0.1]));
-        A(zone, P(pad, G.box(0.46, 0.12, 0.58, 0.03), m.secondary, [s * 0.06, 0.3, 0], [0, 0, s * 0.18]));
-        R.glows.push(P(pad, G.box(0.03, 0.3, 0.03, 0.01), m.glow, [s * 0.32, 0.02, 0.3], [0, 0, -s * 0.1]));
-        break;
-      case 'orb':
-        A(zone, P(pad, G.sph(0.32, 24, 18), m.primary, [s * 0.08, 0.08, 0]));
-        P(pad, G.tor(0.2, 0.04), m.dark, [s * 0.38, 0.08, 0], [0, HP, 0]);
-        P(pad, G.cyl(0.12, 0.12, 0.05, 18), m.chrome, [s * 0.43, 0.08, 0], [0, 0, HP]);
-        break;
-      case 'layered':
-        A(zone, P(pad, G.box(0.42, 0.17, 0.5, 0.04), m.primary, [s * 0.12, 0.24, 0], [0, 0, s * 0.35]));
-        A(zone, P(pad, G.box(0.4, 0.15, 0.46, 0.04), m.secondary, [s * 0.2, 0.08, 0], [0, 0, s * 0.55]));
-        R.glows.push(P(pad, G.box(0.035, 0.035, 0.42, 0.01), m.glowArm, [s * 0.34, 0.28, 0], [0, 0, s * 0.35]));
-        break;
-      case 'pad':
-        A(zone, P(pad, G.sph(0.3, 22, 16), m.primary, [s * 0.12, 0.06, 0], [0, 0, 0], [1, 0.78, 1.05]));
-        P(pad, G.box(0.06, 0.06, 0.5, 0.02), m.dark, [s * 0.14, 0.24, 0], [0, 0, s * 0.3]);
-        break;
-      case 'plate':
-        A(zone, P(pad, G.box(0.38, 0.42, 0.52, 0.04), m.primary, [s * 0.14, 0.1, 0], [0, 0, s * 0.16]));
-        R.glows.push(P(pad, G.box(0.02, 0.02, 0.46, 0.005), m.glow, [s * 0.3, 0.26, 0], [0, 0, s * 0.16]));
-        A(zone, P(pad, G.box(0.32, 0.12, 0.4, 0.03), m.secondary, [s * 0.12, 0.34, 0], [0, 0, s * 0.3]));
-        break;
-      case 'dome':
-        A(zone, P(pad, G.sph(0.42, 26, 18), m.primary, [s * 0.12, 0.14, 0], [0, 0, 0], [1, 0.86, 1]));
-        for (let i = 0; i < 3; i++) A(zone, P(pad, G.box(0.24, 0.16, 0.07, 0.02), m.secondary, [s * (0.2 + i * 0.07), 0.3 - i * 0.12, 0.28 - i * 0.12], [0.4, s * (0.4 + i * 0.3), s * 0.3]));
-        break;
-    }
-
-    // upper arm along +Z of shoulder joint
-    const sh = s > 0 ? R.shL : R.shR, el = s > 0 ? R.elL : R.elR, fist = s > 0 ? R.fistL : R.fistR;
-    const U = d.upper, F = d.fore;
-    P(sh, G.cyl(0.07, 0.07, U, 10), m.joint, [0, 0, U / 2], [HP, 0, 0]);
-    P(el, G.sph(0.12), m.joint, [0, 0, 0]);
-    switch (st.arm) {
-      case 'shield':
-        P(sh, G.box(0.25, 0.25, U * 0.7, 0.05), m.secondary, [0, 0, U * 0.5]);
-        P(el, G.box(0.3, 0.3, F * 0.82, 0.05), m.primary, [0, 0, F * 0.48]);
-        A(zone, P(el, G.box(0.08, 0.6, F * 1.02, 0.03), m.primary, [s * 0.2, 0.04, F * 0.46]));
-        R.glows.push(P(el, G.box(0.02, 0.03, F * 0.6, 0.005), m.glow, [s * 0.25, 0.22, F * 0.46]));
-        break;
-      case 'pod':
-        P(sh, G.cap(0.17, U * 0.55), m.secondary, [0, 0, U * 0.5], [HP, 0, 0]);
-        P(el, G.cap(0.22, F * 0.5), m.primary, [0, 0, F * 0.48], [HP, 0, 0]);
-        A(zone, P(el, G.tor(0.09, 0.025), m.chrome, [s * 0.22, 0.02, F * 0.5], [0, HP, 0]));
-        R.glows.push(P(el, G.sph(0.03, 8, 6), m.glow, [s * 0.23, 0.02, F * 0.5]));
-        break;
-      case 'gauntlet':
-        P(sh, G.box(0.22, 0.22, U * 0.78, 0.04), m.secondary, [0, 0, U * 0.5]);
-        P(el, G.box(0.28, 0.28, F * 0.86, 0.05), m.primary, [0, 0, F * 0.48]);
-        A(zone, R.glows[R.glows.push(P(el, G.box(0.09, 0.3, F * 0.7, 0.03), m.glowArm, [s * 0.16, 0, F * 0.5])) - 1]);
-        break;
-      case 'padded':
-        P(sh, G.cap(0.19, U * 0.45), m.primary, [0, 0, U * 0.5], [HP, 0, 0]);
-        P(el, G.box(0.28, 0.3, F * 0.8, 0.06), m.secondary, [0, 0, F * 0.48]);
-        A(zone, P(el, G.box(0.04, 0.16, F * 0.4, 0.01), m.tertiary, [s * 0.15, 0.04, F * 0.5]));
-        P(el, G.cyl(0.17, 0.17, 0.08, 14), m.dark, [0, 0, F * 0.9], [HP, 0, 0]);
-        break;
-      case 'rail':
-        P(sh, G.box(0.2, 0.22, U * 0.7, 0.04), m.primary, [0, 0, U * 0.5]);
-        P(el, G.box(0.17, 0.17, F * 0.9, 0.03), m.dark, [0, 0, F * 0.48]);
-        for (const y of [0.07, -0.07]) P(el, G.cyl(0.018, 0.018, F * 0.9, 6), m.chrome, [s * 0.12, y, F * 0.48], [HP, 0, 0]);
-        A(zone, P(el, G.box(0.22, 0.26, F * 0.6, 0.03), m.primary, [s * 0.02, 0.05, F * 0.42]));
-        R.glows.push(P(el, G.box(0.015, 0.015, F * 0.5, 0.004), m.glow, [s * 0.13, 0.17, F * 0.42]));
-        break;
-      case 'jag':
-        P(sh, G.cap(0.16, U * 0.55), m.dark, [0, 0, U * 0.5], [HP, 0, 0]);
-        A(zone, P(sh, G.box(0.26, 0.12, U * 0.5, 0.02), m.secondary, [0, 0.13, U * 0.5], [0, 0, s * 0.2]));
-        P(el, G.box(0.3, 0.32, F * 0.88, 0.05), m.primary, [0, 0, F * 0.48]);
-        for (let i = 0; i < 3; i++) A(zone, P(el, G.box(0.08, 0.2, 0.16, 0.02), m.secondary, [s * 0.17, 0.08, F * (0.22 + i * 0.25)], [0.5, 0, s * 0.3]));
-        break;
-    }
-    // fist
-    switch (st.fist) {
-      case 'block':
-        P(fist, G.box(0.3, 0.3, 0.3, 0.06), st.arm === 'padded' ? m.brown : m.dark, [0, 0, 0.12]);
-        P(fist, G.box(0.32, 0.12, 0.1, 0.03), m.primary, [0, 0.07, 0.25]);
-        break;
-      case 'round':
-        P(fist, G.sph(0.21, 18, 14), m.dark, [0, 0, 0.13], [0, 0, 0], [1, 0.92, 1.08]);
-        P(fist, G.cyl(0.18, 0.18, 0.08, 16), m.chrome, [0, 0, 0.02], [HP, 0, 0]);
-        break;
-      case 'stud':
-        P(fist, G.box(0.28, 0.28, 0.28, 0.05), m.primary, [0, 0, 0.12]);
-        for (let i = 0; i < 4; i++) P(fist, G.cyl(0.03, 0.035, 0.05, 8), m.chrome, [-0.1 + i * 0.067, 0.07, 0.28], [HP, 0, 0]);
-        break;
-      case 'claw':
-        P(fist, G.box(0.22, 0.2, 0.16, 0.04), m.dark, [0, 0, 0.06]);
-        for (let i = 0; i < 3; i++) {
-          const f = new THREE.Group(); f.position.set(-0.07 + i * 0.07, 0.06, 0.13); f.rotation.x = 0.5; fist.add(f);
-          P(f, G.box(0.055, 0.055, 0.14, 0.015), m.joint, [0, 0, 0.06]);
-          P(f, G.box(0.05, 0.05, 0.12, 0.015), m.secondary, [0, -0.05, 0.13], [1.0, 0, 0]);
-        }
-        P(fist, G.box(0.05, 0.05, 0.14, 0.015), m.joint, [s * 0.12, -0.04, 0.1], [0.5, 0, -s * 0.5]);
-        break;
-    }
-  }
-
-  // ---------------- legs
-  for (const s of [1, -1]) {
-    const hip = s > 0 ? R.hipL : R.hipR, kn = s > 0 ? R.knL : R.knR, foot = s > 0 ? R.footL : R.footR;
-    const T = d.thigh, S = d.shin;
-    P(hip, G.cyl(0.08, 0.08, T, 10), m.joint, [0, 0, T / 2], [HP, 0, 0]);
-    P(kn, G.sph(0.13), m.joint);
-    P(kn, G.cyl(0.07, 0.07, S, 10), m.joint, [0, 0, S / 2], [HP, 0, 0]);
-    switch (st.leg) {
-      case 'block':
-        P(hip, G.box(0.3, 0.3, T * 0.85, 0.05), m.secondary, [0, 0, T * 0.5]);
-        P(hip, G.box(0.32, 0.08, T * 0.7, 0.03), m.primary, [0, 0.17, T * 0.48]);
-        P(kn, G.box(0.26, 0.1, 0.24, 0.03), m.primary, [0, 0.15, 0.02]);
-        P(kn, G.box(0.34, 0.36, S * 0.82, 0.05), m.primary, [0, 0.02, S * 0.5]);
-        R.glows.push(P(kn, G.box(0.02, 0.02, S * 0.4, 0.005), m.glow, [s * 0.17, 0.2, S * 0.5]));
-        break;
-      case 'pod':
-        P(hip, G.cap(0.2, T * 0.5), m.primary, [0, 0, T * 0.5], [HP, 0, 0]);
-        P(kn, G.cap(0.18, S * 0.5), m.secondary, [0, 0, S * 0.52], [HP, 0, 0]);
-        P(kn, G.sph(0.17), m.primary, [0, 0.05, 0]);
-        break;
-      case 'armored':
-        P(hip, G.box(0.28, 0.3, T * 0.85, 0.05), m.primary, [0, 0, T * 0.5]);
-        R.glows.push(P(hip, G.box(0.1, 0.03, T * 0.4, 0.01), s > 0 ? m.glowLegL : m.glowLegR, [0, 0.16, T * 0.5]));
-        P(kn, G.box(0.3, 0.34, S * 0.85, 0.05), m.secondary, [0, 0.02, S * 0.5]);
-        R.glows.push(P(kn, G.box(0.04, 0.03, S * 0.6, 0.01), s > 0 ? m.glowLegL : m.glowLegR, [s * 0.1, 0.19, S * 0.5]));
-        P(kn, G.box(0.24, 0.1, 0.22, 0.03), m.primary, [0, 0.14, 0.02]);
-        break;
-      case 'heavy':
-        P(hip, G.box(0.38, 0.42, T * 0.85, 0.08), m.primary, [0, 0, T * 0.5]);
-        P(hip, G.box(0.22, 0.04, 0.2, 0.01), s > 0 ? m.secondary : m.tertiary, [0, 0.22, T * 0.4]);
-        P(kn, G.box(0.32, 0.34, S * 0.85, 0.06), m.primary, [0, 0.02, S * 0.5]);
-        P(kn, G.box(0.24, 0.12, 0.22, 0.03), m.dark, [0, 0.14, 0.02]);
-        break;
-      case 'plated':
-        P(hip, G.box(0.28, 0.3, T * 0.85, 0.04), m.primary, [0, 0, T * 0.5]);
-        P(kn, G.box(0.22, 0.24, S * 0.85, 0.03), m.dark, [0, 0, S * 0.5]);
-        P(kn, G.box(0.3, 0.14, S * 0.8, 0.03), m.primary, [0, 0.12, S * 0.45], [0.05, 0, 0]);
-        R.glows.push(P(kn, G.box(0.015, 0.015, S * 0.5, 0.004), m.glow, [0, 0.2, S * 0.45]));
-        break;
-      case 'jag':
-        P(hip, G.box(0.34, 0.34, T * 0.85, 0.05), m.secondary, [0, 0, T * 0.5]);
-        P(kn, G.box(0.34, 0.36, S * 0.85, 0.05), m.primary, [0, 0.02, S * 0.5]);
-        for (let i = 0; i < 2; i++) P(kn, G.cone(0.05, 0.18, 6), m.dark, [0, 0.22, S * (0.3 + i * 0.3)], [-0.4, 0, 0]);
-        break;
-    }
-    // foot (child of root, positioned per frame)
-    const fs = st.foot === 'tread' && s > 0 ? 'boot' : st.foot;
-    switch (fs) {
-      case 'wheel':
-        P(foot, G.box(0.3, 0.15, 0.46, 0.04), m.dark, [0, 0.075, 0.08]);
-        P(foot, G.box(0.28, 0.06, 0.2, 0.02), m.primary, [0, 0.17, 0.18]);
-        P(foot, G.cyl(0.15, 0.15, 0.1, 18), m.rubber, [0, 0.15, -0.17], [0, 0, HP]);
-        P(foot, G.cyl(0.07, 0.07, 0.12, 10), m.chrome, [0, 0.15, -0.17], [0, 0, HP]);
-        break;
-      case 'round':
-        P(foot, G.sph(0.2, 18, 12), m.dark, [0, 0.08, 0.08], [0, 0, 0], [1.0, 0.5, 1.35]);
-        break;
-      case 'boot':
-        P(foot, G.box(0.3, 0.16, 0.5, 0.05), m.dark, [0, 0.08, 0.08]);
-        P(foot, G.box(0.28, 0.08, 0.2, 0.03), m.primary, [0, 0.16, 0.24]);
-        break;
-      case 'tread':
-        P(foot, G.box(0.32, 0.2, 0.62, 0.08), m.rubber, [0, 0.1, 0.06]);
-        for (let i = 0; i < 3; i++) P(foot, G.cyl(0.08, 0.08, 0.34, 12), m.joint, [0, 0.1, -0.14 + i * 0.2], [0, 0, HP]);
-        P(foot, G.box(0.2, 0.08, 0.4, 0.02), m.secondary, [0, 0.22, 0.06]);
-        break;
-      case 'claw':
-        P(foot, G.box(0.3, 0.14, 0.3, 0.04), m.dark, [0, 0.07, 0]);
-        for (let i = 0; i < 3; i++) P(foot, G.cone(0.05, 0.26, 6), m.secondary, [-0.1 + i * 0.1, 0.05, 0.24], [HP, 0, 0]);
-        break;
-    }
-  }
+  BUILDERS[def.build]({ R, m, d, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S });
 
   // overdrive aura light
-  R.aura = new THREE.PointLight(def.colors.accent, 0, 5, 2); R.aura.position.set(0, 0.2, 0.6); R.chest.add(R.aura);
+  R.aura = new THREE.PointLight(def.colors.accent, 0, 5, 2); R.aura.position.set(0, 0.2, 0.7); R.chest.add(R.aura);
   R.root.traverse(o => { if (o.isMesh) o.userData.robot = true; });
   if (opts.scale) R.root.scale.setScalar(opts.scale);
   return R;
 }
+
+// generic fists
+function fistBlock(c, s, mat, plate, size = 0.34) {
+  const { P, fi } = c; const f = fi(s);
+  P(f, G.box(size, size * 0.92, size * 0.95, 0.07), mat, [0, 0, size * 0.42]);
+  for (let i = 0; i < 4; i++) P(f, G.box(size * 0.22, size * 0.3, size * 0.22, 0.03), c.m.joint, [(-1.5 + i) * size * 0.235, size * 0.18, size * 0.86]);
+  P(f, G.box(size * 1.02, size * 0.32, size * 0.24, 0.04), plate, [0, size * 0.28, size * 0.62]);
+  P(f, G.box(size * 0.24, size * 0.3, size * 0.4, 0.04), c.m.joint, [s * size * 0.56, -size * 0.08, size * 0.48], [0, 0, 0]);
+}
+function fistClaw(c, s, plate, len = 0.2, n = 3) {
+  const { P, fi, m } = c; const f = fi(s);
+  P(f, G.box(0.24, 0.2, 0.2, 0.05), m.dark, [0, 0, 0.08]);
+  P(f, G.box(0.26, 0.08, 0.16, 0.03), plate, [0, 0.11, 0.08]);
+  for (let i = 0; i < n; i++) {
+    const x = (i - (n - 1) / 2) * 0.085;
+    const k1 = new THREE.Group(); k1.position.set(x, 0.05, 0.17); k1.rotation.x = 0.55; f.add(k1);
+    P(k1, G.box(0.06, 0.06, len * 0.55, 0.02), m.joint, [0, 0, len * 0.27]);
+    P(k1, G.sph(0.038, 8, 6), m.chrome, [0, 0, len * 0.55]);
+    const k2 = new THREE.Group(); k2.position.z = len * 0.55; k2.rotation.x = 0.9; k1.add(k2);
+    P(k2, G.box(0.055, 0.055, len * 0.5, 0.02), plate, [0, 0, len * 0.24]);
+    P(k2, G.cone(0.03, len * 0.3, 6), m.dark, [0, 0, len * 0.6], [HPI, 0, 0]);
+  }
+  const th = new THREE.Group(); th.position.set(s * 0.13, -0.03, 0.12); th.rotation.set(0.4, 0, -s * 0.7); f.add(th);
+  P(th, G.box(0.055, 0.055, len * 0.6, 0.02), m.joint, [0, 0, len * 0.3]);
+  P(th, G.cone(0.03, len * 0.25, 6), m.dark, [0, 0, len * 0.68], [HPI, 0, 0]);
+}
+const HPI = Math.PI / 2;
+
+const BUILDERS = {
+  // ------------------------------------------------------------ BULWARK: white slab roof over a black dome, lime lights
+  bulwark(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.box(0.9, 0.78, 0.62, 0.08), m.dark, [0, -0.02, -0.04]);
+    P(C, G.sph(0.42, 40, 28), m.glass, [0, 0.02, 0.2], [0, 0, 0], [1, 1, 0.82]);
+    P(C, G.tor(0.41, 0.035, 10, 48), m.joint, [0, 0.02, 0.22]);
+    for (const [x, y] of [[0.22, 0.18], [-0.22, 0.18]]) P(C, G.box(0.12, 0.04, 0.03, 0.01), m.glow, [x, y, 0.53], [0, x > 0 ? 0.5 : -0.5, x > 0 ? -0.5 : 0.5]);
+    for (const [x, y] of [[0.08, 0.28], [-0.12, 0.3], [0.16, -0.12]]) P(C, G.sph(0.012, 6, 4), m.chrome, [x, y, 0.52]);
+    A('core', P(C, G.box(1.08, 0.13, 0.78, 0.04), m.primary, [0, 0.47, 0.02], [0.12, 0, 0]));
+    A('core', P(C, G.box(0.92, 0.1, 0.3, 0.03), m.primary, [0, 0.4, 0.4], [0.45, 0, 0]));
+    for (const s of sides) {
+      A('core', P(C, G.box(0.17, 0.66, 0.72, 0.04), m.primary, [s * 0.52, 0.15, 0.02], [0, 0, s * 0.16]));
+      P(C, G.box(0.03, 0.26, 0.03, 0.01), m.glow, [s * 0.53, 0.06, 0.39], [0, 0, s * 0.16]);
+      P(C, G.cyl(0.05, 0.05, 0.42, 10), m.chrome, [s * 0.24, 0.5, -0.44]);
+      cable(C, [[s * 0.3, -0.3, 0.2], [s * 0.42, -0.42, 0.05], [s * 0.36, -0.5, -0.2]], 0.022);
+    }
+    P(C, G.box(0.36, 0.22, 0.2, 0.04), m.secondary, [0, -0.44, 0.22]);
+    for (let i = 0; i < 4; i++) P(C, G.box(0.3, 0.025, 0.03, 0.01), m.joint, [0, -0.38 - i * 0.04, 0.33]);
+    P(C, G.cyl(0.27, 0.3, 0.2, 18), m.dark, [0, -0.46, -0.04]);
+    P(C, G.box(0.7, 0.58, 0.3, 0.06), m.secondary, [0, 0.04, -0.44]);
+    for (let i = 0; i < 5; i++) P(C, G.box(0.5, 0.03, 0.04, 0.01), m.joint, [0, -0.12 + i * 0.07, -0.6]);
+    // sensor under the roof
+    P(H, G.box(0.36, 0.14, 0.24, 0.04), m.dark, [0, 0.0, 0.04]);
+    P(H, G.box(0.28, 0.035, 0.03, 0.01), m.eye, [0, 0.01, 0.17]);
+    A('head', P(H, G.cyl(0.012, 0.012, 0.34, 6), m.chrome, [0.15, 0.2, -0.08]));
+    A('head', P(H, G.box(0.42, 0.06, 0.3, 0.02), m.secondary, [0, 0.1, 0.0]));
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.05, 0); C.add(pad);
+      P(pad, G.sph(0.18, 16, 12), m.joint, [0, -0.06, 0]);
+      A(z, P(pad, G.box(0.36, 0.98, 0.84, 0.05), m.primary, [s * 0.14, 0.16, 0], [0, 0, s * 0.13]));
+      A(z, P(pad, G.box(0.5, 0.12, 0.8, 0.04), m.secondary, [s * -0.04, 0.66, 0], [0, 0, s * 0.3]));
+      P(pad, G.box(0.04, 0.42, 0.04, 0.01), m.glow, [s * 0.3, 0.12, 0.43], [0, 0, s * 0.13]);
+      bolts(pad, [[s * 0.2, 0.55, 0.43], [s * 0.26, 0.0, 0.43], [s * 0.3, -0.25, 0.43]]);
+      // arm: heavy frame + white sleeve; forearm block with door-shield
+      P(sh(s), G.box(0.3, 0.3, U * 0.72, 0.05), m.dark, [0, 0, U * 0.52]);
+      P(sh(s), G.box(0.08, 0.32, U * 0.6, 0.02), m.primary, [s * 0.18, 0, U * 0.5]);
+      P(el(s), G.box(0.44, 0.46, F * 0.86, 0.06), m.primary, [0, 0, F * 0.5]);
+      P(el(s), G.box(0.34, 0.1, F * 0.6, 0.02), m.dark, [0, -0.25, F * 0.5]);
+      A(z, P(el(s), G.box(0.1, 0.78, F * 1.08, 0.03), m.primary, [s * 0.28, 0.06, F * 0.46]));
+      P(el(s), G.box(0.025, 0.04, F * 0.7, 0.008), m.glow, [s * 0.335, 0.32, F * 0.46]);
+      bolts(el(s), [[s * 0.335, -0.2, F * 0.15], [s * 0.335, -0.2, F * 0.8], [s * 0.335, 0.2, F * 0.15]]);
+      piston(sh(s), [0, -0.17, U * 0.2], el(s), [0, -0.26, F * 0.25], 0.05);
+      fistBlock(c, s, m.dark, m.primary, 0.4);
+      // stocky legs, wheel at the heel
+      P(hp(s), G.box(0.34, 0.34, T * 0.8, 0.05), m.dark, [0, 0, T * 0.5]);
+      P(hp(s), G.box(0.38, 0.12, T * 0.78, 0.03), m.primary, [0, 0.2, T * 0.48]);
+      P(kn(s), G.box(0.3, 0.16, 0.3, 0.04), m.primary, [0, 0.18, 0.02]);
+      P(kn(s), G.box(0.46, 0.48, S * 0.8, 0.06), m.primary, [0, 0.02, S * 0.5]);
+      P(kn(s), G.box(0.03, 0.04, S * 0.5, 0.008), m.glow, [s * 0.24, 0.27, S * 0.5]);
+      piston(hp(s), [0, -0.2, T * 0.25], kn(s), [0, -0.25, S * 0.35], 0.045);
+      P(ft(s), G.box(0.36, 0.18, 0.58, 0.05), m.dark, [0, 0.09, 0.1]);
+      P(ft(s), G.box(0.34, 0.08, 0.26, 0.03), m.primary, [0, 0.2, 0.24]);
+      P(ft(s), G.cyl(0.22, 0.22, 0.14, 24), m.rubber, [0, 0.22, -0.24], [0, 0, HP]);
+      P(ft(s), G.cyl(0.11, 0.11, 0.16, 12), m.chrome, [0, 0.22, -0.24], [0, 0, HP]);
+    }
+  },
+
+  // ------------------------------------------------------------ ONYX: charcoal spheres, discs, knuckle-dragging arms
+  onyx(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.sph(0.5, 36, 26), m.primary, [0, 0.04, 0], [0, 0, 0], [1.12, 0.92, 0.88]);
+    P(C, G.sph(0.38, 28, 20), m.secondary, [0, -0.46, 0.06], [0, 0, 0], [1, 0.9, 1]);
+    for (let i = 0; i < 2; i++) P(C, G.box(0.03, 0.14, 0.03, 0.01), m.dark, [-0.04 + i * 0.08, -0.4, 0.42], [0.2, 0, 0.1]);
+    P(C, G.sph(0.44, 28, 20), m.dark, [0, 0.16, -0.32]);
+    P(C, G.tor(0.26, 0.07, 12, 32), m.dark, [0, 0.42, 0.06], [HP, 0, 0]);
+    A('core', P(C, G.box(0.42, 0.26, 0.12, 0.06), m.secondary, [0.04, 0.12, 0.44], [-0.2, 0, 0]));
+    A('core', P(C, G.box(0.3, 0.2, 0.1, 0.05), m.secondary, [-0.26, -0.1, 0.38], [-0.1, -0.4, 0]));
+    for (const [x, y] of [[-0.3, 0.24], [-0.24, 0.24], [-0.27, 0.19]]) P(C, G.sph(0.022, 8, 6), m.glow, [x, y, 0.4]);
+    for (const s of sides) A('core', P(C, G.sph(0.2, 18, 14), m.secondary, [s * 0.5, -0.18, 0.12]));
+    // head sunk in the collar
+    P(H, G.sph(0.17, 22, 16), m.dark, [0, 0.02, 0.02]);
+    P(H, G.box(0.22, 0.06, 0.08, 0.025), m.glass, [0, 0.03, 0.15]);
+    P(H, G.sph(0.022, 8, 6), m.eye, [0.03, 0.03, 0.19]);
+    A('head', P(H, G.box(0.32, 0.08, 0.26, 0.04), m.primary, [0, 0.16, 0], [0.15, 0, 0]));
+    const port = (parent, pos, rot, r = 0.12) => {
+      P(parent, G.cyl(r, r, 0.04, 22), m.dark, pos, rot);
+      const g = new THREE.Group(); g.position.set(...pos); g.rotation.set(...rot); parent.add(g);
+      P(g, G.tor(r * 0.72, r * 0.12, 6, 22), m.secondary, [0, 0.025, 0], [HP, 0, 0]);
+      for (const a of [0, HP]) P(g, G.box(r * 1.1, 0.02, r * 0.18, 0.005), m.secondary, [0, 0.03, 0], [0, a, 0]);
+      P(g, G.cyl(r * 0.2, r * 0.2, 0.02, 10), m.chrome, [0, 0.04, 0]);
+    };
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.04, 0); C.add(pad);
+      A(z, P(pad, G.sph(0.42, 30, 22), m.primary, [s * 0.06, 0.08, 0], [0, 0, 0], [1, 0.95, 1.05]));
+      P(pad, G.cyl(0.04, 0.05, 0.16, 8), m.dark, [s * -0.05, 0.52, -0.05]);
+      port(pad, [s * 0.47, 0.06, 0], [0, 0, -s * HP], 0.14);
+      P(sh(s), G.cap(0.22, U * 0.5), m.secondary, [0, 0, U * 0.52], [HP, 0, 0]);
+      P(el(s), G.sph(0.22, 18, 14), m.primary);
+      port(el(s), [s * 0.2, 0, 0], [0, 0, -s * HP], 0.1);
+      A(z, P(el(s), G.cap(0.27, F * 0.5), m.primary, [0, 0, F * 0.5], [HP, 0, 0]));
+      port(el(s), [s * 0.27, 0.02, F * 0.5], [0, 0, -s * HP], 0.12);
+      P(el(s), G.tor(0.25, 0.03, 8, 24), m.dark, [0, 0, F * 0.9]);
+      // big mitt: palm and four curled thick fingers
+      const f = fi(s);
+      P(f, G.sph(0.22, 18, 14), m.dark, [0, 0, 0.14], [0, 0, 0], [1.05, 0.85, 1]);
+      for (let i = 0; i < 4; i++) P(f, G.cap(0.055, 0.12), m.primary, [(-1.5 + i) * 0.1, 0.08, 0.3], [HP + 0.6, 0, 0]);
+      P(f, G.cap(0.06, 0.1), m.primary, [s * 0.2, -0.04, 0.18], [HP, 0, -s * 0.6]);
+      cable(C, [[s * 0.3, 0.3, -0.25], [s * 0.55, 0.42, -0.2], [s * 0.7, 0.3, -0.1]], 0.03);
+      // thick rounded legs with knee discs
+      P(hp(s), G.cap(0.25, T * 0.45), m.primary, [0, 0, T * 0.5], [HP, 0, 0]);
+      port(kn(s), [0, 0.15, 0], [0, 0, 0], 0.13);
+      P(kn(s), G.cap(0.21, S * 0.5), m.secondary, [0, 0, S * 0.52], [HP, 0, 0]);
+      P(kn(s), G.tor(0.2, 0.03, 8, 24), m.dark, [0, 0, S * 0.85]);
+      P(ft(s), G.sph(0.22, 18, 12), m.dark, [0, 0.1, 0.06], [0, 0, 0], [1.05, 0.5, 1.35]);
+      for (let i = 0; i < 3; i++) P(ft(s), G.cap(0.05, 0.08), m.primary, [(i - 1) * 0.1, 0.05, 0.32], [HP, 0, 0]);
+    }
+  },
+
+  // ------------------------------------------------------------ TORQUE: white riot frame on a single drive wheel
+  torque(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.box(0.78, 0.72, 0.52, 0.08), m.primary, [0, 0.06, 0]);
+    P(C, G.box(0.46, 0.34, 0.1, 0.04), m.secondary, [0, 0.14, 0.28]);
+    for (const s of sides) {
+      A('core', P(C, G.box(0.34, 0.36, 0.1, 0.03), m.primary, [s * 0.22, 0.18, 0.3], [-0.1, -s * 0.25, 0]));
+      const hook = P(C, G.tor(0.09, 0.022, 6, 16, Math.PI * 1.3), m.glow, [s * 0.2, -0.06, 0.32], [0, 0, s > 0 ? 0.3 : 2.8]);
+    }
+    for (let i = 0; i < 3; i++) P(C, G.box(0.34 - i * 0.04, 0.09, 0.32, 0.02), m.dark, [0, -0.32 - i * 0.1, 0.02]);
+    P(C, G.cyl(0.09, 0.09, 0.5, 10), m.chrome, [0, -0.4, -0.1]);
+    for (const s of sides) piston(R.spine, [s * 0.14, 0, 0.1], C, [s * 0.22, -0.18, 0.12], 0.035);
+    P(C, G.box(0.62, 0.5, 0.26, 0.05), m.secondary, [0, 0.1, -0.36]);
+    P(H, G.box(0.26, 0.24, 0.28, 0.08), m.dark, [0, 0.1, 0.02]);
+    P(H, G.box(0.24, 0.05, 0.04, 0.015), m.eye, [0, 0.12, 0.16]);
+    A('head', P(H, G.box(0.3, 0.1, 0.3, 0.04), m.primary, [0, 0.26, 0.0], [0.1, 0, 0]));
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.05, 0); C.add(pad);
+      P(pad, G.sph(0.16, 14, 10), m.joint, [0, -0.04, 0]);
+      A(z, P(pad, G.box(0.42, 0.7, 0.66, 0.05), m.primary, [s * 0.22, 0.24, 0], [0, 0, -s * 0.35]));
+      A(z, P(pad, G.box(0.36, 0.1, 0.6, 0.03), m.secondary, [s * 0.44, 0.5, 0], [0, 0, -s * 0.62]));
+      P(pad, G.tor(0.08, 0.02, 6, 14, Math.PI * 1.3), m.glow, [s * 0.18, 0.15, 0.34], [0, 0, s > 0 ? 0.5 : 2.6]);
+      P(sh(s), G.box(0.22, 0.24, U * 0.72, 0.04), m.secondary, [0, 0, U * 0.52]);
+      P(el(s), G.box(0.3, 0.32, F * 0.85, 0.05), m.primary, [0, 0, F * 0.5]);
+      A(z, P(el(s), G.box(0.09, 1.0, F * 1.25, 0.03), m.primary, [s * 0.22, 0.08, F * 0.42]));
+      P(el(s), G.box(0.1, 0.12, 0.3, 0.03), m.dark, [s * 0.16, 0, F * 0.42]);
+      P(el(s), G.box(0.02, 0.6, 0.03, 0.006), m.glow, [s * 0.27, 0.08, F * 0.98]);
+      piston(sh(s), [0, -0.14, U * 0.25], el(s), [0, -0.18, F * 0.3], 0.04);
+      fistBlock(c, s, m.dark, m.secondary, 0.32);
+      // fork struts down to the axle
+      P(hp(s), G.box(0.12, 0.2, T * 1.0, 0.03), m.dark, [0, 0, T * 0.5]);
+      P(kn(s), G.box(0.1, 0.18, S * 1.0, 0.03), m.secondary, [0, 0, S * 0.5]);
+      piston(R.body, [s * (c.d.hipW + 0.1), -0.05, -0.1], kn(s), [0, -0.1, S * 0.6], 0.04);
+    }
+    // the wheel lives on the left foot group (both feet share the axle point)
+    const wg = new THREE.Group(); wg.position.set(-c.d.stanceW, c.d.ankle, 0); R.footL.add(wg); R.wheel = wg;
+    const tyre = P(wg, G.tor(0.47, 0.11, 14, 40), m.rubber, [0, 0, 0], [0, HP, 0]);
+    P(wg, G.cyl(0.38, 0.38, 0.14, 32), m.dark, [0, 0, 0], [0, 0, HP]);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; P(wg, G.box(0.16, 0.06, 0.3, 0.01), m.secondary, [0, Math.sin(a) * 0.22, Math.cos(a) * 0.22], [a, 0, 0]); }
+    P(wg, G.cyl(0.12, 0.12, 0.3, 14), m.chrome, [0, 0, 0], [0, 0, HP]);
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; P(wg, G.box(0.24, 0.04, 0.06, 0.01), m.rubber, [0, Math.sin(a) * 0.57, Math.cos(a) * 0.57], [a, 0, 0]); }
+    const fender = new THREE.Group(); fender.position.set(-c.d.stanceW, c.d.ankle, 0); R.footL.add(fender);
+    P(fender, G.tor(0.68, 0.06, 6, 24, Math.PI * 0.7), m.primary, [0, 0, 0], [0, -HP, HP * 0.6]);
+    R.wheeled = true;
+  },
+
+  // ------------------------------------------------------------ SPECTRA: navy horned knight with neon panels
+  spectra(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.box(0.82, 0.62, 0.54, 0.1), m.primary, [0, 0.1, 0]);
+    P(C, G.box(0.5, 0.4, 0.44, 0.06), m.dark, [0, -0.28, 0]);
+    A('core', P(C, G.box(0.36, 0.3, 0.12, 0.05), m.secondary, [0.2, 0.16, 0.29], [-0.12, -0.25, 0]));
+    A('core', P(C, G.box(0.36, 0.3, 0.12, 0.05), m.secondary, [-0.2, 0.16, 0.29], [-0.12, 0.25, 0]));
+    P(C, G.box(0.18, 0.18, 0.03, 0.02), m.glow, [-0.2, 0.15, 0.36], [-0.12, 0.25, 0]);
+    P(C, G.box(0.1, 0.16, 0.03, 0.02), m.glowPink, [0.17, 0.2, 0.36], [-0.12, -0.25, 0]);
+    P(C, G.box(0.06, 0.06, 0.03, 0.01), m.glowArm, [0.27, 0.06, 0.35], [-0.12, -0.25, 0]);
+    for (let i = 0; i < 3; i++) A('core', P(C, G.box(0.42 - i * 0.05, 0.1, 0.38, 0.03), m.secondary, [0, -0.2 - i * 0.12, 0.06]));
+    P(C, G.box(0.66, 0.14, 0.5, 0.05), m.dark, [0, 0.44, 0]);
+    P(C, G.box(0.62, 0.52, 0.28, 0.06), m.secondary, [0, 0.1, -0.38]);
+    for (const s of sides) { P(C, G.box(0.06, 0.48, 0.34, 0.02), m.dark, [s * 0.2, 0.2, -0.56]); cable(C, [[s * 0.25, 0.4, -0.4], [s * 0.3, 0.55, -0.2], [s * 0.15, 0.55, 0.0]], 0.02); }
+    // beetle helmet: rounded dome, snout, forward-curving horns, red visor
+    P(H, G.sph(0.21, 26, 18), m.primary, [0, 0.16, 0], [0, 0, 0], [1, 0.9, 1.15]);
+    P(H, G.box(0.24, 0.14, 0.24, 0.05), m.dark, [0, 0.04, 0.12]);
+    P(H, G.box(0.18, 0.08, 0.12, 0.03), m.secondary, [0, -0.02, 0.24], [0.3, 0, 0]);
+    P(H, G.box(0.3, 0.05, 0.05, 0.015), m.eye, [0, 0.15, 0.22]);
+    P(H, G.box(0.04, 0.12, 0.34, 0.015), m.dark, [0, 0.36, -0.02]);
+    for (const s of sides) {
+      const hg = new THREE.Group(); hg.position.set(s * 0.15, 0.26, -0.02); hg.rotation.set(-0.5, 0, -s * 0.5); H.add(hg);
+      A('head', P(hg, G.cone(0.055, 0.26, 10), m.secondary, [0, 0.12, 0]));
+      const tip = P(hg, G.cone(0.035, 0.18, 8), m.glowArm, [0, 0.3, 0.06], [0.6, 0, 0]);
+    }
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.04, 0); C.add(pad);
+      P(pad, G.sph(0.17, 14, 10), m.joint, [0, -0.04, 0]);
+      A(z, P(pad, G.sph(0.3, 24, 16), m.primary, [s * 0.1, 0.12, 0], [0, 0, 0], [1.1, 0.8, 1.15]));
+      A(z, P(pad, G.box(0.4, 0.14, 0.5, 0.04), m.secondary, [s * 0.2, 0.0, 0], [0, 0, s * 0.55]));
+      P(pad, G.box(0.04, 0.04, 0.44, 0.01), s < 0 ? m.glowArm : m.glow, [s * 0.36, 0.06, 0], [0, 0, s * 0.55]);
+      P(sh(s), G.box(0.22, 0.22, U * 0.76, 0.05), m.secondary, [0, 0, U * 0.52]);
+      if (s < 0) {
+        // molten right gauntlet
+        A(z, P(el(s), G.cap(0.24, F * 0.55), m.glowArm, [0, 0, F * 0.5], [HP, 0, 0], [1, 1, 1.05]));
+        P(el(s), G.tor(0.24, 0.035, 8, 24), m.dark, [0, 0, F * 0.15]);
+        P(el(s), G.tor(0.24, 0.035, 8, 24), m.dark, [0, 0, F * 0.85]);
+        fistBlock(c, s, m.glowArm, m.dark, 0.36);
+      } else {
+        P(el(s), G.box(0.28, 0.28, F * 0.86, 0.06), m.primary, [0, 0, F * 0.5]);
+        A(z, P(el(s), G.box(0.06, 0.2, F * 0.6, 0.02), m.glowArm, [s * 0.16, 0, F * 0.5]));
+        fistBlock(c, s, m.primary, m.secondary, 0.3);
+      }
+      piston(sh(s), [0, -0.12, U * 0.25], el(s), [0, -0.16, F * 0.25], 0.035);
+      P(hp(s), G.box(0.3, 0.32, T * 0.85, 0.06), m.primary, [0, 0, T * 0.5]);
+      P(hp(s), G.box(0.12, 0.03, T * 0.45, 0.01), s > 0 ? m.glowLegL : m.glowLegR, [0, 0.17, T * 0.5]);
+      P(kn(s), G.box(0.26, 0.12, 0.24, 0.04), m.primary, [0, 0.15, 0.02]);
+      P(kn(s), G.box(0.32, 0.36, S * 0.85, 0.06), m.secondary, [0, 0.02, S * 0.5]);
+      P(kn(s), G.box(0.18, 0.03, S * 0.6, 0.01), s > 0 ? m.glowLegL : m.glowLegR, [0, 0.2, S * 0.52]);
+      piston(hp(s), [0, -0.16, T * 0.3], kn(s), [0, -0.2, S * 0.35], 0.035);
+      P(ft(s), G.box(0.3, 0.15, 0.5, 0.05), m.dark, [0, 0.075, 0.1]);
+      P(ft(s), G.box(0.28, 0.07, 0.22, 0.03), m.primary, [0, 0.17, 0.22]);
+      P(ft(s), G.cyl(0.15, 0.15, 0.11, 20), m.rubber, [0, 0.15, -0.18], [0, 0, HP]);
+      P(ft(s), G.cyl(0.07, 0.07, 0.13, 10), m.chrome, [0, 0.15, -0.18], [0, 0, HP]);
+    }
+  },
+
+  // ------------------------------------------------------------ BELLJAR: blast dome, quilted arms, clear guards, one tread
+  belljar(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.box(0.68, 0.52, 0.46, 0.12), m.primary, [0, 0.04, 0]);
+    A('core', P(C, G.box(0.28, 0.18, 0.05, 0.02), m.secondary, [0.16, 0.08, 0.24]));
+    A('core', P(C, G.box(0.16, 0.12, 0.05, 0.02), m.tertiary, [-0.18, -0.08, 0.24]));
+    for (const s of sides) P(C, G.box(0.07, 0.62, 0.52, 0.02), m.dark, [s * 0.15, 0.02, 0], [0, 0, s * 0.35]);
+    for (let i = 0; i < 4; i++) P(C, G.tor(0.21 - (i % 2) * 0.02, 0.05, 8, 22), m.rubber, [0, -0.28 - i * 0.07, 0], [HP, 0, 0]);
+    P(C, G.box(0.5, 0.42, 0.22, 0.06), m.secondary, [0, 0.0, -0.34]);
+    for (const s of sides) { P(C, G.cyl(0.035, 0.035, 0.34, 8), m.chrome, [s * 0.12, 0.38, 0.02]); cable(C, [[s * 0.2, 0.2, -0.3], [s * 0.38, 0.32, -0.25], [s * 0.5, 0.25, -0.1]], 0.028); }
+    // the dome: wide bowl with a lip, face module and red eye below
+    const pts = [[0.001, 0], [0.48, 0.0], [0.64, 0.03], [0.68, 0.08], [0.66, 0.14], [0.58, 0.22], [0.44, 0.29], [0.22, 0.33], [0.001, 0.34]].map(p => new THREE.Vector2(p[0], p[1]));
+    A('head', P(H, new THREE.LatheGeometry(pts, 48), m.primary, [0, 0.2, -0.02]));
+    P(H, G.tor(0.66, 0.025, 6, 48), m.dark, [0, 0.27, -0.02], [HP, 0, 0]);
+    P(H, G.box(0.14, 0.04, 0.02, 0.01), m.tertiary, [0.1, 0.4, 0.5], [-0.45, 0.2, 0]);
+    P(H, G.box(0.22, 0.03, 0.02, 0.01), m.secondary, [-0.28, 0.39, 0.46], [-0.45, -0.5, 0]);
+    P(H, G.box(0.36, 0.2, 0.3, 0.05), m.dark, [0, 0.08, 0.08]);
+    P(H, G.box(0.2, 0.08, 0.04, 0.02), m.glass, [0, 0.1, 0.24]);
+    P(H, G.sph(0.03, 10, 8), m.eye, [0.02, 0.1, 0.26]);
+    for (let i = 0; i < 4; i++) P(H, G.box(0.12, 0.012, 0.02, 0.004), m.joint, [0.12, 0.04 + i * 0.03, 0.235]);
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.04, 0); C.add(pad);
+      A(z, P(pad, G.sph(0.32, 24, 18), m.fabric, [s * 0.08, 0.06, 0], [0, 0, 0], [1, 0.82, 1.05]));
+      A(z, P(pad, G.box(0.04, 0.42, 0.56, 0.02), m.clear, [s * 0.36, 0.08, 0], [0, 0, -s * 0.18]));
+      A(z, P(pad, G.box(0.36, 0.04, 0.5, 0.02), m.clear, [s * 0.16, 0.36, 0], [0, 0, s * 0.3]));
+      P(pad, G.box(0.06, 0.06, 0.52, 0.02), m.dark, [s * 0.14, 0.27, 0], [0, 0, s * 0.3]);
+      P(sh(s), G.cap(0.2, U * 0.48), m.fabric, [0, 0, U * 0.5], [HP, 0, 0]);
+      P(el(s), G.cap(0.19, F * 0.5), m.fabric, [0, 0, F * 0.45], [HP, 0, 0]);
+      A(z, P(el(s), G.box(0.05, 0.16, F * 0.42, 0.01), m.tertiary, [s * 0.18, 0.05, F * 0.45]));
+      P(el(s), G.tor(0.19, 0.04, 8, 22), m.dark, [0, 0, F * 0.86]);
+      fistBlock(c, s, m.brown, m.brown, 0.36);
+      // thick armoured thighs with olive / blue patches
+      P(hp(s), G.box(0.42, 0.46, T * 0.86, 0.1), m.primary, [0, 0, T * 0.5]);
+      P(hp(s), G.box(0.24, 0.04, 0.22, 0.01), s > 0 ? m.secondary : m.tertiary, [s * 0.04, 0.24, T * 0.4]);
+      P(hp(s), G.box(0.12, 0.03, 0.1, 0.01), m.tertiary, [s * -0.1, 0.24, T * 0.68]);
+      P(kn(s), G.box(0.28, 0.14, 0.26, 0.04), m.dark, [0, 0.16, 0.02]);
+      P(kn(s), G.cap(0.18, S * 0.5), m.fabric, [0, 0, S * 0.5], [HP, 0, 0]);
+      piston(hp(s), [s * 0.2, -0.1, T * 0.3], kn(s), [s * 0.17, -0.08, S * 0.35], 0.04);
+      if (s > 0) { // left: boot with a clear shin guard
+        P(kn(s), G.box(0.34, 0.06, S * 0.95, 0.02), m.clear, [0, 0.24, S * 0.55], [0.08, 0, 0]);
+        P(ft(s), G.box(0.32, 0.18, 0.52, 0.06), m.brown, [0, 0.09, 0.08]);
+        P(ft(s), G.box(0.3, 0.06, 0.2, 0.02), m.dark, [0, 0.2, 0.24]);
+      } else { // right: tank tread
+        P(ft(s), G.box(0.34, 0.24, 0.68, 0.1), m.rubber, [0, 0.12, 0.06]);
+        for (let i = 0; i < 4; i++) P(ft(s), G.cyl(0.09, 0.09, 0.36, 14), m.joint, [0, 0.12, -0.2 + i * 0.17], [0, 0, HP]);
+        for (let i = 0; i < 9; i++) P(ft(s), G.box(0.36, 0.03, 0.04, 0.005), m.dark, [0, 0.005, -0.25 + i * 0.075]);
+        P(ft(s), G.box(0.24, 0.08, 0.46, 0.02), m.secondary, [0, 0.27, 0.06]);
+      }
+    }
+  },
+
+  // ------------------------------------------------------------ WARDEN OD-9: olive plate over a skeletal frame, claws
+  warden(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.box(0.78, 0.5, 0.5, 0.08), m.primary, [0, 0.16, 0]);
+    P(C, G.box(0.46, 0.42, 0.38, 0.06), m.dark, [0, -0.3, 0]);
+    for (const s of sides) {
+      A('core', P(C, G.box(0.34, 0.3, 0.1, 0.03), m.secondary, [s * 0.21, 0.16, 0.27], [0, -s * 0.32, 0]));
+      P(C, G.box(0.026, 0.28, 0.02, 0.006), m.glow, [s * 0.1, 0.18, 0.31], [0, 0, s * 0.6]);
+      P(C, G.box(0.026, 0.2, 0.02, 0.006), m.glow, [s * 0.2, -0.12, 0.22], [0, 0, -s * 0.3]);
+      A('core', P(C, G.box(0.16, 0.12, 0.1, 0.03), m.primary, [s * 0.12, -0.3, 0.2]));
+      for (let k = 0; k < 2; k++) P(C, G.cyl(0.02, 0.02, 0.36, 6), m.chrome, [s * (0.08 + k * 0.08), -0.36, 0.12], [0.1, 0, 0]);
+    }
+    P(C, G.box(0.026, 0.32, 0.02, 0.006), m.glow, [0, -0.04, 0.29]);
+    P(C, G.box(0.56, 0.42, 0.24, 0.05), m.secondary, [0, 0.12, -0.34]);
+    // helmet with single eye and antenna pair
+    P(H, G.box(0.3, 0.32, 0.36, 0.12), m.primary, [0, 0.16, 0.0]);
+    P(H, G.box(0.2, 0.22, 0.05, 0.03), m.dark, [0, 0.13, 0.18]);
+    P(H, G.sph(0.045, 12, 10), m.eye, [0, 0.18, 0.21]);
+    P(H, G.box(0.02, 0.24, 0.02, 0.005), m.glow, [0, 0.16, 0.205]);
+    for (const s of sides) { P(H, G.box(0.02, 0.16, 0.02, 0.005), m.glow, [s * 0.08, 0.1, 0.2], [0, 0, s * 0.4]); A('head', P(H, G.cyl(0.014, 0.014, 0.4, 6), m.dark, [s * 0.08, 0.46, -0.08], [-0.15, 0, -s * 0.08])); }
+    A('head', P(H, G.box(0.34, 0.1, 0.24, 0.04), m.secondary, [0, 0.32, -0.04], [0.15, 0, 0]));
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.05, 0); C.add(pad);
+      P(pad, G.sph(0.15, 14, 10), m.joint, [0, -0.05, 0]);
+      A(z, P(pad, G.box(0.42, 0.52, 0.58, 0.1), m.primary, [s * 0.12, 0.12, 0], [0, 0, s * 0.12]));
+      A(z, P(pad, G.box(0.3, 0.12, 0.46, 0.04), m.secondary, [s * 0.12, 0.42, 0], [0, 0, s * 0.35]));
+      P(pad, G.box(0.02, 0.02, 0.5, 0.005), m.glow, [s * 0.34, 0.28, 0], [0, 0, s * 0.12]);
+      // skeletal arms: twin rods, small plates, exposed pistons
+      for (const y of [0.06, -0.06]) { P(sh(s), G.cyl(0.03, 0.03, U * 0.9, 6), m.dark, [0, y, U * 0.5], [HP, 0, 0]); P(el(s), G.cyl(0.028, 0.028, F * 0.9, 6), m.dark, [s * 0.05, y, F * 0.48], [HP, 0, 0]); }
+      P(sh(s), G.box(0.18, 0.2, U * 0.45, 0.04), m.primary, [0, 0.03, U * 0.42]);
+      A(z, P(el(s), G.box(0.16, 0.2, F * 0.45, 0.04), m.primary, [s * 0.03, 0.06, F * 0.35]));
+      P(el(s), G.box(0.015, 0.015, F * 0.4, 0.004), m.glow, [s * 0.12, 0.17, F * 0.35]);
+      P(el(s), G.cyl(0.07, 0.07, 0.12, 10), m.joint, [0, 0, F * 0.92], [HP, 0, 0]);
+      piston(sh(s), [0, -0.1, U * 0.15], el(s), [0, -0.1, F * 0.55], 0.032);
+      piston(sh(s), [s * 0.08, 0.08, U * 0.3], el(s), [s * 0.08, 0.08, F * 0.6], 0.026);
+      fistClaw(c, s, m.primary, 0.24, 3);
+      // big angular legs over heavy boots
+      P(hp(s), G.box(0.38, 0.4, T * 0.82, 0.06), m.primary, [0, 0.02, T * 0.5]);
+      P(hp(s), G.box(0.2, 0.06, T * 0.4, 0.02), m.secondary, [s * 0.04, 0.23, T * 0.46]);
+      P(kn(s), G.sph(0.16, 14, 10), m.dark);
+      const shin = P(kn(s), G.box(0.44, 0.44, S * 0.74, 0.06), m.primary, [0, 0.06, S * 0.48]);
+      P(kn(s), G.box(0.3, 0.12, 0.3, 0.04), m.secondary, [0, 0.2, 0.05], [-0.2, 0, 0]);
+      P(kn(s), G.box(0.015, 0.015, S * 0.4, 0.004), m.glow, [0, 0.29, S * 0.45]);
+      piston(hp(s), [0, -0.2, T * 0.3], kn(s), [0, -0.18, S * 0.3], 0.04);
+      P(ft(s), G.box(0.42, 0.24, 0.62, 0.06), m.dark, [0, 0.12, 0.08]);
+      P(ft(s), G.box(0.4, 0.12, 0.3, 0.04), m.primary, [0, 0.26, 0.2], [0.15, 0, 0]);
+    }
+  },
+
+  // ------------------------------------------------------------ MIRE: hunched dark hulk, boulder shoulders, claws
+  mire(c) {
+    const { R, m, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S } = c;
+    P(C, G.sph(0.5, 32, 24), m.primary, [0, 0.06, 0], [0, 0, 0], [1.15, 0.92, 1.0]);
+    P(C, G.sph(0.32, 22, 16), m.dark, [0, -0.42, 0.04]);
+    const rng = mulberry32(7);
+    for (let i = 0; i < 9; i++) {
+      const a = -1.2 + i * 0.3, y = (rng() - 0.35) * 0.5;
+      A('core', P(C, G.box(0.26, 0.22, 0.07, 0.02), i % 3 ? m.secondary : m.primary, [Math.sin(a) * 0.52, y, Math.cos(a) * 0.45], [rng() * 0.6 - 0.3, a, rng() * 0.8 - 0.4]));
+    }
+    for (let i = 0; i < 3; i++) P(C, G.box(0.05, 0.3, 0.06, 0.01), m.glow, [-0.25 + i * 0.05, 0.1 - i * 0.06, 0.46], [0, -0.4, 0.5]);
+    for (let i = 0; i < 4; i++) P(C, G.cone(0.05, 0.3, 6), m.dark, [(i - 1.5) * 0.18, 0.44, -0.25], [-0.7, 0, (i - 1.5) * 0.25]);
+    P(H, G.box(0.32, 0.22, 0.28, 0.06), m.dark, [0, 0.0, 0.04]);
+    P(H, G.sph(0.075, 14, 10), m.eye, [0, 0.0, 0.18]);
+    P(H, G.tor(0.09, 0.02, 6, 16), m.joint, [0, 0.0, 0.17]);
+    A('head', P(H, G.box(0.44, 0.12, 0.34, 0.04), m.secondary, [0, 0.13, 0.0], [0.35, 0, 0]));
+    for (const s of sides) {
+      const z = zoneOf(s);
+      const pad = new THREE.Group(); pad.position.set(s * c.d.shX, c.d.shY + 0.04, 0); C.add(pad);
+      A(z, P(pad, G.sph(0.46, 30, 22), m.primary, [s * 0.04, 0.16, 0], [0, 0, 0], [1, 0.9, 1.05]));
+      for (let i = 0; i < 4; i++) A(z, P(pad, G.box(0.24, 0.16, 0.07, 0.02), m.secondary, [s * (0.18 + i * 0.07), 0.36 - i * 0.12, 0.3 - i * 0.1], [0.4, s * (0.4 + i * 0.3), s * 0.3]));
+      P(sh(s), G.cap(0.17, U * 0.55), m.dark, [0, 0, U * 0.5], [HP, 0, 0]);
+      A(z, P(sh(s), G.box(0.28, 0.12, U * 0.5, 0.02), m.secondary, [0, 0.15, U * 0.5], [0, 0, s * 0.2]));
+      P(el(s), G.box(0.32, 0.34, F * 0.88, 0.06), m.primary, [0, 0, F * 0.48]);
+      for (let i = 0; i < 3; i++) A(z, P(el(s), G.box(0.08, 0.22, 0.17, 0.02), m.secondary, [s * 0.18, 0.08, F * (0.22 + i * 0.25)], [0.5, 0, s * 0.3]));
+      P(el(s), G.box(0.03, 0.04, F * 0.5, 0.008), m.glow, [s * 0.17, -0.14, F * 0.5]);
+      piston(sh(s), [0, -0.14, U * 0.2], el(s), [0, -0.2, F * 0.3], 0.045);
+      fistClaw(c, s, m.secondary, 0.3, 3);
+      P(hp(s), G.box(0.36, 0.36, T * 0.85, 0.05), m.secondary, [0, 0, T * 0.5]);
+      P(kn(s), G.box(0.36, 0.38, S * 0.85, 0.05), m.primary, [0, 0.02, S * 0.5]);
+      for (let i = 0; i < 2; i++) P(kn(s), G.cone(0.05, 0.2, 6), m.dark, [0, 0.24, S * (0.3 + i * 0.3)], [-0.4, 0, 0]);
+      piston(hp(s), [0, -0.18, T * 0.3], kn(s), [0, -0.2, S * 0.4], 0.04);
+      P(ft(s), G.box(0.34, 0.16, 0.34, 0.04), m.dark, [0, 0.08, 0]);
+      for (let i = 0; i < 3; i++) P(ft(s), G.cone(0.055, 0.3, 6), m.secondary, [-0.11 + i * 0.11, 0.06, 0.28], [HP, 0, 0]);
+    }
+  },
+};
 
 // ---------------------------------------------------------------- two-bone IK (law of cosines + pole)
 const _ikS = new THREE.Vector3(), _ikD = new THREE.Vector3(), _ikP = new THREE.Vector3(), _ikE = new THREE.Vector3(), _ikT = new THREE.Vector3();
@@ -1448,27 +1704,22 @@ function setGlow(R, k) {
 }
 function setEnvIntensity(R, v) { for (const k in R.mats) R.mats[k].envMapIntensity = v; }
 
-// pose a robot statically (menu display, dormant hangar mechs)
-function poseStatic(R, kind = 'idle', t = 0) {
+// pose a robot statically (dormant hangar mechs)
+function poseStatic(R, kind = 'idle') {
   const d = R.dims, sc = R.root.scale.x;
   R.root.updateMatrixWorld(true);
   const up = V3(0, 1, 0), fwd = V3(0, 0, 1).applyQuaternion(R.root.quaternion);
   for (const s of [1, -1]) {
-    const sh = s > 0 ? R.shL : R.shR, el = s > 0 ? R.elL : R.elR;
-    let tgt;
-    if (kind === 'dormant') tgt = V3(s * (d.shX + 0.1), d.hipH + 0.1, 0.25);
-    else if (kind === 'victory') tgt = V3(s * (d.shX + 0.15), d.hipH + d.spineY + d.chestY + 1.3, 0.2);
-    else tgt = V3(s * 0.26, d.hipH + d.spineY + d.chestY + d.shY + 0.02 + Math.sin(t * 3 + s) * 0.02, 0.58);
+    const tgt = kind === 'dormant' ? V3(s * (d.shX + 0.1), d.hipH + 0.15, 0.3) : V3(s * 0.26, d.hipH + d.spineY + d.chestY + d.shY, 0.58);
     R.root.localToWorld(tgt);
-    const pole = V3(s, -1, -0.4).applyQuaternion(R.root.quaternion);
-    solveIK(sh, el, d.upper * sc, d.fore * sc, tgt, pole, up);
+    solveIK(s > 0 ? R.shL : R.shR, s > 0 ? R.elL : R.elR, d.upper * sc, d.fore * sc, tgt, V3(s, -1, -0.4).applyQuaternion(R.root.quaternion), up);
   }
   for (const s of [1, -1]) {
-    const hip = s > 0 ? R.hipL : R.hipR, kn = s > 0 ? R.knL : R.knR, foot = s > 0 ? R.footL : R.footR;
-    foot.position.set(s * d.stanceW, 0, s * 0.1);
+    const foot = s > 0 ? R.footL : R.footR; foot.position.set(s * d.stanceW, 0, s * 0.1);
     const ank = V3(s * d.stanceW, d.ankle, s * 0.1); R.root.localToWorld(ank);
-    solveIK(hip, kn, d.thigh * sc, d.shin * sc, ank, fwd, fwd);
+    solveIK(s > 0 ? R.hipL : R.hipR, s > 0 ? R.knL : R.knR, d.thigh * sc, d.shin * sc, ank, fwd, fwd);
   }
+  updatePistons(R);
 }
 
 // ---- 30_arenas.js
@@ -1602,7 +1853,7 @@ class Ropes {
     this.heights = [0.62, 1.12, 1.62];
     this.corners = [V3(-H, 0, -H), V3(H, 0, -H), V3(H, 0, H), V3(-H, 0, H)];
     this.normals = [V3(0, 0, -1), V3(1, 0, 0), V3(0, 0, 1), V3(-1, 0, 0)];
-    this.mats = colors.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.45, metalness: 0.1, emissive: c, emissiveIntensity: 0.12 }));
+    this.mats = colors.map(c => new THREE.MeshStandardMaterial({ color: new THREE.Color(c).multiplyScalar(0.7), roughness: 0.55, metalness: 0.05 }));
     const geo = new THREE.CylinderGeometry(0.04, 0.04, 1, 8);
     this.sides = this.normals.map((n, i) => ({ n, a: this.corners[i], b: this.corners[(i + 1) % 4], s: 0.5, defl: 0, vel: 0, segs: this.heights.map((h, k) => [new THREE.Mesh(geo, this.mats[k]), new THREE.Mesh(geo, this.mats[k])]) }));
     for (const sd of this.sides) for (const pair of sd.segs) for (const m of pair) { m.castShadow = true; parent.add(m); }
@@ -1644,7 +1895,7 @@ class Crowd {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
     this.mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, n)); this.mesh.count = n;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.data = spots.map(s => ({ x: s[0], y: s[1], z: s[2], yaw: Math.atan2(-s[0], -s[2]) + rand(-0.3, 0.3), ph: rand(0, 6.28), f: rand(5, 9), sc: rand(0.9, 1.12), hype: rand(0.5, 1.2) }));
+    this.data = spots.map(s => ({ x: s[0], y: s[1], z: s[2], yaw: Math.atan2(-s[0], -s[2]) + rand(-0.3, 0.3), ph: rand(0, 6.28), f: rand(5, 9), sc: rand(0.9, 1.12) * HUMAN, hype: rand(0.5, 1.2) }));
     const c = new THREE.Color();
     this.data.forEach((d, i) => { c.set(pick(palette)).multiplyScalar(rand(0.5, 1.1)); this.mesh.setColorAt(i, c); });
     this.mesh.receiveShadow = false; this.mesh.castShadow = false; this.mesh.frustumCulled = false;
@@ -1656,7 +1907,7 @@ class Crowd {
     const { _m, _q, _p, _s, _e } = this;
     for (let i = 0; i < this.data.length; i++) {
       const d = this.data[i];
-      const hop = Math.max(0, Math.sin(t * d.f + d.ph)) * (0.015 + excite * 0.28 * d.hype);
+      const hop = Math.max(0, Math.sin(t * d.f + d.ph)) * (0.01 + excite * 0.16 * d.hype);
       _p.set(d.x, d.y + hop, d.z); _q.setFromEuler(_e.set(0, d.yaw + Math.sin(t * 0.7 + d.ph) * 0.15, Math.sin(t * d.f * 0.5 + d.ph) * 0.04 * excite)); _s.setScalar(d.sc);
       _m.compose(_p, _q, _s); this.mesh.setMatrixAt(i, _m);
     }
@@ -1701,7 +1952,7 @@ function lightShaft(parent, w, d, h, tilt, color, alpha) {
       void main(){ float f=abs(dot(vN,vV)); float a=uA*pow(vUv.y,0.7)*f*f*(0.75+0.25*sin(vUv.x*60.0+uTime*0.4)); gl_FragColor=vec4(uC*a,1.0); }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   });
-  const m = new THREE.Mesh(geo, mat); m.scale.set(w, h, d); m.rotation.x = tilt; m.position.y = h / 2; m.renderOrder = 3;
+  const m = new THREE.Mesh(geo, mat); m.scale.set(w, h, d); m.rotation.x = tilt; m.position.y = h / 2; m.renderOrder = 3; m.userData.noAO = true;
   const g = new THREE.Group(); g.add(m); parent.add(g);
   return { group: g, mat };
 }
@@ -1748,7 +1999,7 @@ function ringLights(g, o) {
   const B = new Batch(); const truss = stdMat(0x1a1b1c, { metalness: 0.8, roughness: 0.4 }); const T = 4.4, y = RING_Y + 8.5;
   for (const s of [-1, 1]) { B.add(G.cube(T * 2, 0.3, 0.3), truss, [0, y, s * T]); B.add(G.cube(0.3, 0.3, T * 2), truss, [s * T, y, 0]); }
   for (const [x, z] of [[-T, -T], [T, -T], [T, T], [-T, T]]) B.add(G.cyl(0.03, 0.03, 30, 4), truss, [x, y + 15, z]);
-  const lamp = stdMat(0x0d0d0d, { metalness: 0.6, roughness: 0.5 }); const lens = basicGlow(o.key || 0xfff1dc, 4);
+  const lamp = stdMat(0x0d0d0d, { metalness: 0.6, roughness: 0.5 }); const lens = basicGlow(o.key || 0xfff1dc, 6);
   for (let i = -1; i <= 1; i++) for (const s of [-1, 1]) {
     B.add(G.cyl(0.22, 0.28, 0.5, 12), lamp, [i * 2.4, y - 0.4, s * T], [s * 0.6, 0, 0]);
     B.add(G.cyl(0.2, 0.2, 0.02, 12), lens, [i * 2.4, y - 0.66, s * T - s * 0.15], [s * 0.6, 0, 0]);
@@ -1786,24 +2037,24 @@ VENUES.tanker = (g, A) => {
   // catwalks
   for (const s of [-1, 1]) {
     B.add(G.cube(2.6, 0.2, Z * 2 - 2), iron, [s * (X - 1.6), 6, 0]);
-    for (let z = -Z + 1.5; z < Z - 1; z += 1.6) { B.add(G.cyl(0.04, 0.04, 1.1, 6), iron, [s * (X - 2.9), 6.55, z]); }
-    for (const h of [6.6, 7.1]) B.add(G.cyl(0.035, 0.035, Z * 2 - 2, 6), iron, [s * (X - 2.9), h, 0], [Math.PI / 2, 0, 0]);
+    for (let z = -Z + 1.5; z < Z - 1; z += 1.0) { B.add(G.cyl(0.025, 0.025, 0.6, 6), iron, [s * (X - 2.9), 6.4, z]); }
+    for (const h of [6.4, 6.7]) B.add(G.cyl(0.022, 0.022, Z * 2 - 2, 6), iron, [s * (X - 2.9), h, 0], [Math.PI / 2, 0, 0]);
     for (let z = -Z + 3; z < Z; z += 6) B.add(G.cube(0.2, 6, 0.2), iron, [s * (X - 2.9), 3, z]);
   }
   // containers
   const corr = texCorrugated(); corr.repeat.set(2, 1);
   const cMats = [0x8a2d1c, 0x2f5f63, 0x5a6b84, 0xb5621e, 0x6b6e3a].map(c => stdMat(c, { map: corr, roughness: 0.7, metalness: 0.4 }));
-  const cont = (x, z, ry, y = 0, m = pick(cMats)) => B.add(G.cube(6.1, 2.6, 2.44), m, [x, y + 1.3, z], [0, ry, 0]);
+  const cont = (x, z, ry, y = 0, m = pick(cMats)) => B.add(G.cube(3.66, 1.56, 1.46), m, [x, y * 0.6 + 0.78, z], [0, ry, 0]);
   cont(-12.5, -16, 0); cont(-12.5, -16, 0, 2.6); cont(-6, -17.5, 0.05); cont(12, -15.5, 0.1); cont(12.5, 16, 0); cont(12.5, 16, 0.02, 2.6); cont(-13, 15, Math.PI / 2 + 0.1); cont(-6.5, 17.2, 0);
   // barrels, tires, rope coils
   const barrelMats = [stdMat(0x7a1f17, { roughness: .6, metalness: .5 }), stdMat(0x24496b, { roughness: .6, metalness: .5 }), stdMat(0x3c4a2c, { roughness: .6, metalness: .5 })];
   const tireMat = stdMat(0x111111, { roughness: 0.95, metalness: 0 }); const ropeMat = stdMat(0x8a7350, { roughness: 0.95, metalness: 0 });
-  for (const [x, z] of [[-9, -9.5], [-9.8, -8.6], [9.5, 9.6], [10.3, 8.9], [9.7, -10.2], [-10.4, 9.8], [-11, 10.6]]) { const m = pick(barrelMats); B.add(G.cyl(0.42, 0.42, 1.25, 16), m, [x, 0.63, z]); B.add(G.tor(0.42, 0.03, 4, 16), m, [x, 0.35, z], [Math.PI / 2, 0, 0]); B.add(G.tor(0.42, 0.03, 4, 16), m, [x, 0.95, z], [Math.PI / 2, 0, 0]); }
-  for (const [x, z, n] of [[-10.5, -6, 4], [10.5, 5.5, 3], [7, -11, 5]]) for (let k = 0; k < n; k++) B.add(G.tor(0.5, 0.2, 10, 20), tireMat, [x + rand(-.05, .05), 0.2 + k * 0.38, z], [Math.PI / 2, 0, 0]);
-  for (const [x, z] of [[-8, 11], [11, -6.5]]) for (let k = 0; k < 4; k++) B.add(G.tor(0.7 - k * 0.08, 0.1, 8, 24), ropeMat, [x, 0.1 + k * 0.17, z], [Math.PI / 2, 0, 0]);
+  for (const [x, z] of [[-9, -9.5], [-9.8, -8.6], [9.5, 9.6], [10.3, 8.9], [9.7, -10.2], [-10.4, 9.8], [-11, 10.6]]) { const m = pick(barrelMats); B.add(G.cyl(0.23, 0.23, 0.69, 16), m, [x, 0.345, z]); B.add(G.tor(0.23, 0.018, 4, 16), m, [x, 0.19, z], [Math.PI / 2, 0, 0]); B.add(G.tor(0.23, 0.018, 4, 16), m, [x, 0.52, z], [Math.PI / 2, 0, 0]); }
+  for (const [x, z, n] of [[-10.5, -6, 4], [10.5, 5.5, 3], [7, -11, 5]]) for (let k = 0; k < n; k++) B.add(G.tor(0.28, 0.11, 10, 20), tireMat, [x + rand(-.05, .05), 0.11 + k * 0.21, z], [Math.PI / 2, 0, 0]);
+  for (const [x, z] of [[-8, 11], [11, -6.5]]) for (let k = 0; k < 4; k++) B.add(G.tor(0.4 - k * 0.045, 0.055, 8, 24), ropeMat, [x, 0.055 + k * 0.095, z], [Math.PI / 2, 0, 0]);
   // crowd barriers
   const barMat = stdMat(0x8f979a, { metalness: 0.85, roughness: 0.35 });
-  for (const s of [-1, 1]) for (let k = -8; k <= 8; k += 2.2) { B.add(G.cyl(0.03, 0.03, 2.2, 6), barMat, [k, 1.05, s * 8.4], [0, 0, Math.PI / 2]); B.add(G.cyl(0.03, 0.03, 2.2, 6), barMat, [s * 8.4, 1.05, k], [Math.PI / 2, 0, 0]); B.add(G.cyl(0.025, 0.025, 1.05, 6), barMat, [k, 0.52, s * 8.4]); B.add(G.cyl(0.025, 0.025, 1.05, 6), barMat, [s * 8.4, 0.52, k]); }
+  for (const s of [-1, 1]) for (let k = -6.6; k <= 6.6; k += 1.2) { B.add(G.cyl(0.018, 0.018, 1.2, 6), barMat, [k, 0.58, s * 7.0], [0, 0, Math.PI / 2]); B.add(G.cyl(0.018, 0.018, 1.2, 6), barMat, [s * 7.0, 0.58, k], [Math.PI / 2, 0, 0]); B.add(G.cyl(0.014, 0.014, 0.58, 6), barMat, [k, 0.29, s * 7.0]); B.add(G.cyl(0.014, 0.014, 0.58, 6), barMat, [s * 7.0, 0.29, k]); }
   // pendant lamps
   const shade = stdMat(0x2a2d24, { metalness: 0.6, roughness: 0.5, side: THREE.DoubleSide }); const bulb = basicGlow(0xffb060, 6);
   for (const [x, z] of [[-7, -7], [7, -7], [7, 7], [-7, 7], [0, -12], [0, 12]]) {
@@ -1839,8 +2090,8 @@ VENUES.tanker = (g, A) => {
   const sun = new THREE.DirectionalLight(0xc8dcff, 1.1); sun.position.set(2, 30, 6); g.add(sun, sun.target);
   A.dust = dustField(g, 500, [-5, 5, 1, Hh, -4, 4], [1, 0.95, 0.85], 0.045);
   // crowd
-  const spots = crowdRing(9.2, 4, 0.75, 0, 0, 1.0, (x, z) => Math.abs(x) > X - 1 || Math.abs(z) > Z - 1 || (Math.abs(x) > 11 && Math.abs(z) > 13));
-  for (const s of [-1, 1]) for (let z = -Z + 2; z < Z - 2; z += 0.75) spots.push([s * (X - 1.8 + rand(-.4, .4)), 6.1, z]);
+  const spots = crowdRing(7.5, 7, 0.48, 0, 0, 0.55, (x, z) => Math.abs(x) > X - 1 || Math.abs(z) > Z - 1 || (Math.abs(x) > 10.5 && Math.abs(z) > 13) || (Math.abs(x) > 8.5 && Math.abs(z) > 8.5 && Math.abs(Math.abs(x) - Math.abs(z)) < 1.6));
+  for (const s of [-1, 1]) for (let z = -Z + 2; z < Z - 2; z += 0.45) for (const o of [0, 0.5]) spots.push([s * (X - 1.6 - o + rand(-.1, .1)), 6.1, z + o * 0.2]);
   A.crowd = new Crowd(g, spots, ['#7a6a5a', '#4a5560', '#6b3a2a', '#8a8070', '#2f3a3a', '#5a4a3a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -1877,30 +2128,30 @@ VENUES.foundry = (g, A) => {
   B.add(G.cube(24, 1, 0.1), hazMat, [0, 14.4, Z - 0.75]);
   // hazard floor lines + barriers
   for (const s of [-1, 1]) { B.add(G.cube(X * 2 - 4, 0.02, 0.3), yel, [0, 0.01, s * 10.5]); B.add(G.cube(0.3, 0.02, 21), yel, [s * 10.5, 0.01, 0]); }
-  for (const s of [-1, 1]) for (let k = -7.5; k <= 7.5; k += 2.5) { B.add(G.box(2.3, 0.85, 0.5, 0.05), hazMat, [k, 0.43, s * 8.6]); B.add(G.box(0.5, 0.85, 2.3, 0.05), hazMat, [s * 8.6, 0.43, k]); }
+  for (const s of [-1, 1]) for (let k = -6.6; k <= 6.6; k += 1.32) { B.add(G.box(1.25, 0.47, 0.28, 0.03), hazMat, [k, 0.24, s * 7.0]); B.add(G.box(0.28, 0.47, 1.25, 0.03), hazMat, [s * 7.0, 0.24, k]); }
   // crates & carts
   const crate = stdMat(0x5a4a33, { map: TEX.panel, roughness: 0.8 });
-  for (const [x, z, n] of [[-15, 8, 3], [16, 6, 2], [15, -9, 2], [-12, 14, 2], [17, 16, 3]]) for (let k = 0; k < n; k++) B.add(G.box(1.4, 1.4, 1.4, 0.04), crate, [x + rand(-.2, .2), 0.7 + k * 1.4, z + rand(-.2, .2)], [0, rand(-.2, .2), 0]);
-  B.add(G.cube(1.5, 1.4, 2.6), yel, [-14, 0.9, -4]); B.add(G.cube(0.2, 3.2, 0.2), steel, [-14.7, 1.8, -5.2]); B.add(G.cube(0.2, 3.2, 0.2), steel, [-13.3, 1.8, -5.2]);
-  for (const [x, z] of [[-14.6, -3], [-13.4, -3], [-14.6, -5], [-13.4, -5]]) B.add(G.cyl(0.35, 0.35, 0.3, 14), stdMat(0x111111, { roughness: .9 }), [x, 0.35, z], [0, 0, Math.PI / 2]);
+  for (const [x, z, n] of [[-15, 8, 3], [16, 6, 2], [15, -9, 2], [-12, 14, 2], [17, 16, 3], [-9.5, 11, 2], [10, -11.5, 2]]) for (let k = 0; k < n; k++) B.add(G.box(0.8, 0.8, 0.8, 0.03), crate, [x + rand(-.1, .1), 0.4 + k * 0.8, z + rand(-.1, .1)], [0, rand(-.2, .2), 0]);
+  B.add(G.cube(0.9, 0.84, 1.56), yel, [-12, 0.54, -4]); B.add(G.cube(0.12, 1.9, 0.12), steel, [-12.4, 1.0, -4.85]); B.add(G.cube(0.12, 1.9, 0.12), steel, [-11.6, 1.0, -4.85]);
+  for (const [x, z] of [[-12.4, -3.4], [-11.6, -3.4], [-12.4, -4.6], [-11.6, -4.6]]) B.add(G.cyl(0.2, 0.2, 0.18, 14), stdMat(0x111111, { roughness: .9 }), [x, 0.2, z], [0, 0, Math.PI / 2]);
   // scaffolds around dormant mechs
   const mechSpots = [[-13, -18, 0.55], [13, -18, -0.55]];
   for (const [mx, mz] of mechSpots) {
-    for (const [dx, dz] of [[-3.5, -3], [3.5, -3], [-3.5, 3], [3.5, 3]]) B.add(G.cube(0.25, 12, 0.25), yel, [mx + dx, 6, mz + dz]);
-    for (const h of [4.5, 8.5]) { B.add(G.cube(7.2, 0.18, 1.6), steel, [mx, h, mz + 3.2]); B.add(G.cube(7.2, 0.05, 0.05), yel, [mx, h + 1.0, mz + 4]); for (let k = -3.5; k <= 3.5; k += 1.75) B.add(G.cyl(0.03, 0.03, 1, 5), yel, [mx + k, h + 0.5, mz + 4]); }
-    B.add(G.cube(7.2, 0.25, 0.25), yel, [mx, 12, mz - 3]); B.add(G.cube(7.2, 0.25, 0.25), yel, [mx, 12, mz + 3]);
+    for (const [dx, dz] of [[-3, -2.4], [3, -2.4], [-3, 2.4], [3, 2.4]]) B.add(G.cube(0.2, 7, 0.2), yel, [mx + dx, 3.5, mz + dz]);
+    for (const h of [2.4, 4.4]) { B.add(G.cube(6.2, 0.12, 1.0), steel, [mx, h, mz + 2.6]); B.add(G.cube(6.2, 0.04, 0.04), yel, [mx, h + 0.55, mz + 3.05]); for (let k = -3; k <= 3; k += 0.75) B.add(G.cyl(0.02, 0.02, 0.55, 5), yel, [mx + k, h + 0.28, mz + 3.05]); }
+    B.add(G.cube(6.2, 0.2, 0.2), yel, [mx, 7, mz - 2.4]); B.add(G.cube(6.2, 0.2, 0.2), yel, [mx, 7, mz + 2.4]);
   }
   B.build(g, { receive: true });
   // dormant giant robots in their cradles
   A.mechs = [];
   mechSpots.forEach(([mx, mz, ry], i) => {
-    const def = ROBOTS[i === 0 ? 0 : 4];
-    const R = buildRobot(def, { dormant: true, scale: 2.5, colors: { primary: i ? 0x6a6f63 : 0x9a9c94, secondary: 0x50544d, dark: 0x1e2122, accent: 0x000000, eye: 0x331100, tertiary: 0x50544d, brown: 0x50544d } });
+    const def = ROBOT(i === 0 ? 'bulwark' : 'warden');
+    const R = buildRobot(def, { dormant: true, scale: 1.75, colors: { primary: i ? 0x6a6f63 : 0x9a9c94, secondary: 0x50544d, dark: 0x1e2122, accent: 0x000000, eye: 0x331100, tertiary: 0x50544d, brown: 0x50544d } });
     R.root.position.set(mx, 0, mz); R.root.rotation.y = ry; g.add(R.root);
     R.root.updateMatrixWorld(true); poseStatic(R, 'dormant');
     R.root.traverse(o => { if (o.isMesh) { o.castShadow = false; } });
     A.mechs.push(R);
-    const welder = new THREE.Object3D(); welder.position.set(mx + (i ? -1.2 : 1.2), 3.2 + i * 2.5, mz + 1.4); g.add(welder);
+    const welder = new THREE.Object3D(); welder.position.set(mx + (i ? -0.9 : 0.9), 1.6 + i * 1.6, mz + 1.1); g.add(welder);
     FX.addEmitter(welder, 'weld', 7);
     const wl = new THREE.PointLight(0x9fd8ff, 0, 8, 2); wl.position.copy(welder.position); g.add(wl); A.weldLights = (A.weldLights || []).concat(wl);
   });
@@ -1908,8 +2159,8 @@ VENUES.foundry = (g, A) => {
   const work2 = work.clone(); work2.target = new THREE.Object3D(); work2.target.position.set(13, 6, -18); g.add(work2, work2.target);
   const ban = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), stdMat(0xffffff, { map: texBanner(['BAY 9', 'AUTHORISED FRAMES ONLY · LIFT ZONE'], '#1a1f22', '#f2b400'), roughness: 0.9 })); ban.position.set(-X + 0.7, 10, 6); ban.rotation.y = Math.PI / 2; g.add(ban);
   A.dust = dustField(g, 400, [-15, 15, 1, 16, -20, 20], [0.8, 0.9, 1], 0.04);
-  const spots = crowdRing(9.6, 4, 0.75, 0, 0, 1.0, (x, z) => (z < -11 && Math.abs(x) > 8) || Math.abs(x) > X - 1 || Math.abs(z) > Z - 2);
-  for (const [mx, mz] of mechSpots) for (const h of [4.6, 8.6]) for (let k = -3.2; k <= 3.2; k += 0.7) spots.push([mx + k, h, mz + 3.4 + rand(-.2, .2)]);
+  const spots = crowdRing(7.6, 7, 0.48, 0, 0, 0.55, (x, z) => (z < -11 && Math.abs(x) > 8) || Math.abs(x) > X - 1 || Math.abs(z) > Z - 2);
+  for (const [mx, mz] of mechSpots) for (const h of [2.46, 4.46]) for (let k = -2.9; k <= 2.9; k += 0.42) spots.push([mx + k, h, mz + 2.7 + rand(-.15, .15)]);
   A.crowd = new Crowd(g, spots, ['#c98a1a', '#3d4a52', '#5a6870', '#2a3238', '#c9c2b0', '#7a3a1a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -1921,7 +2172,7 @@ VENUES.carnival = (g, A) => {
   const L = ringLights(g, { key: 0xffe8d0, keyI: 1350, rims: [0xff4a9a, 0x5ac8ff], rimI: 520, sky: 0x4050a0, ground: 0x1a1018, hemiI: 0.4 });
   // sky dome
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: {}, vertexShader: `varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`, fragmentShader: `varying vec3 vP; void main(){ float h=clamp(vP.y,0.0,1.0); vec3 a=vec3(0.22,0.1,0.28), b=vec3(0.02,0.03,0.09); vec3 c=mix(a,b,pow(h,0.45)); gl_FragColor=vec4(c,1.0); }` });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), skyMat); g.add(sky);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), skyMat); sky.userData.noAO = true; g.add(sky);
   const sp = new Float32Array(1200 * 3); for (let i = 0; i < 1200; i++) { const a = rand(0, 6.28), e = rand(0.12, 1.4), r = 170; sp[i * 3] = Math.cos(a) * Math.cos(e) * r; sp[i * 3 + 1] = Math.sin(e) * r; sp[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r; }
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
   g.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xdfe6ff, size: 1.1, sizeAttenuation: false, fog: false })));
@@ -1974,13 +2225,13 @@ VENUES.carnival = (g, A) => {
   const cl = new THREE.PointLight(0xffb060, 120, 18, 1.6); cl.position.set(-22, 4.5, -12); g.add(cl);
   // arcade cabinets
   for (let k = 0; k < 4; k++) {
-    const x = 14 + k * 1.3, z = 12.5;
+    const x = 12 + k * 0.72, z = 10.5;
     const scr = canvasTex(128, 128, (gg, w, h) => { gg.fillStyle = '#000'; gg.fillRect(0, 0, w, h); const hue = randi(0, 360); for (let i = 0; i < 40; i++) { gg.fillStyle = `hsl(${hue + rand(-40, 40)},90%,60%)`; gg.fillRect(randi(0, 15) * 8, randi(0, 15) * 8, 8, 8); } gg.fillStyle = '#fff'; gg.font = 'bold 16px monospace'; gg.fillText(k === 2 ? 'TILT' : 'INSERT', 16, 112); });
     const cab = stdMat([0x2a3a8a, 0x8a2a5a, 0x1a1a1a, 0x2a7a5a][k], { roughness: .5 });
-    B.add(G.box(1.1, 2.1, 0.9, 0.05), cab, [x, 1.05, z], [0, Math.PI + (k === 2 ? 0.25 : 0), k === 2 ? 0.1 : 0]);
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.7), new THREE.MeshBasicMaterial({ map: scr, color: new THREE.Color(k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6) })); s.position.set(x, 1.45, z - 0.46); s.rotation.y = Math.PI; g.add(s);
+    B.add(G.box(0.6, 1.15, 0.5, 0.03), cab, [x, 0.58, z], [0, Math.PI + (k === 2 ? 0.25 : 0), k === 2 ? 0.1 : 0]);
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.38), new THREE.MeshBasicMaterial({ map: scr, color: new THREE.Color(k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6) })); s.position.set(x, 0.8, z - 0.26); s.rotation.y = Math.PI; g.add(s);
   }
-  const al = new THREE.PointLight(0xff4aa0, 40, 10, 1.8); al.position.set(16, 2.2, 11.5); g.add(al);
+  const al = new THREE.PointLight(0xff4aa0, 30, 8, 1.8); al.position.set(13, 1.4, 9.8); g.add(al);
   // giant broken robot head half buried
   B.add(G.sph(3.2, 24, 16), rustM, [22, 0.6, -6], [0.4, 0.8, 0.3]);
   B.add(G.box(3.8, 1.2, 2.6, 0.3), rustM, [21.2, 0.8, -3.6], [0.3, 0.8, 0.4]);
@@ -1997,12 +2248,12 @@ VENUES.carnival = (g, A) => {
   g.add(sb);
   // bleachers
   const bl = stdMat(0x4a4f5a, { metalness: 0.7, roughness: 0.5 });
-  for (const s of [-1, 1]) for (let k = 0; k < 5; k++) B.add(G.cube(1.0, 0.12, 18), bl, [s * (11 + k * 1.0), 0.5 + k * 0.6, 0]);
-  for (const s of [-1, 1]) for (let z = -9; z <= 9; z += 3) B.add(G.cube(0.12, 3.4, 0.12), bl, [s * 15, 1.7, z]);
+  for (const s of [-1, 1]) for (let k = 0; k < 8; k++) B.add(G.cube(0.55, 0.08, 18), bl, [s * (8.6 + k * 0.55), 0.3 + k * 0.33, 0]);
+  for (const s of [-1, 1]) for (let z = -9; z <= 9; z += 2) B.add(G.cube(0.08, 2.9, 0.08), bl, [s * 12.8, 1.45, z]);
   B.build(g, { receive: true });
   const spots = [];
-  for (const s of [-1, 1]) for (let k = 0; k < 5; k++) for (let z = -8.6; z <= 8.6; z += 0.72) spots.push([s * (11 + k * 1.0), 0.56 + k * 0.6, z + rand(-.1, .1)]);
-  spots.push(...crowdRing(10, 3, 0.85, 0, 0, 1.0, (x, z) => Math.abs(x) > 10.5 || (z > 0 && Math.abs(x) < 6)));
+  for (const s of [-1, 1]) for (let k = 0; k < 8; k++) for (let z = -8.6; z <= 8.6; z += 0.45) spots.push([s * (8.6 + k * 0.55), 0.34 + k * 0.33, z + rand(-.08, .08)]);
+  spots.push(...crowdRing(7.4, 4, 0.48, 0, 0, 0.55, (x, z) => Math.abs(x) > 8.2 || (z > 0 && Math.abs(x) < 5)));
   A.crowd = new Crowd(g, spots, ['#5a4a7a', '#7a3a5a', '#2a4a6a', '#9a8a6a', '#3a3a4a', '#6a2a2a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -2059,8 +2310,8 @@ VENUES.reactor = (g, A) => {
   const steam = new THREE.Object3D(); steam.position.set(-16, 0.5, 14); g.add(steam); FX.addEmitter(steam, 'steam', 3);
   const steam2 = new THREE.Object3D(); steam2.position.set(17, 0.5, -12); g.add(steam2); FX.addEmitter(steam2, 'steam', 3);
   const spots = [];
-  for (let k = 0; k < 5; k++) { const r0 = 10.6 + k * 1.2, y = 0.6 + k * 0.6; for (let a = 0; a < Math.PI * 2; a += 0.75 / r0) spots.push([Math.cos(a) * r0 + rand(-.1, .1), y, Math.sin(a) * r0 + rand(-.1, .1)]); }
-  for (let a = 0; a < Math.PI * 2; a += 0.04) spots.push([Math.cos(a) * 19.3, 9.2, Math.sin(a) * 19.3]);
+  for (let k = 0; k < 5; k++) { const r0 = 10.6 + k * 1.2, y = 0.6 + k * 0.6; for (let a = 0; a < Math.PI * 2; a += 0.42 / r0) for (const o of [-0.3, 0.25]) spots.push([Math.cos(a) * (r0 + o) + rand(-.05, .05), y, Math.sin(a) * (r0 + o) + rand(-.05, .05)]); }
+  for (let a = 0; a < Math.PI * 2; a += 0.024) spots.push([Math.cos(a) * 19.3, 9.2, Math.sin(a) * 19.3]);
   A.crowd = new Crowd(g, spots, ['#2a3a4a', '#4a5a6a', '#1a2a3a', '#6a7a8a', '#3a2a4a', '#2a4a5a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -2075,6 +2326,13 @@ const Arena = {
     this.group = g; this.id = id; this.current = { id };
     FX.clearEmitters();
     VENUES[id](g, this.current);
+    // surface relief for every textured venue material
+    const cache = new Map(), base = baseTextureSet();
+    g.traverse(o => {
+      const mt = o.material; if (!mt || !mt.isMeshStandardMaterial || mt.normalMap || !mt.map || base.has(mt.map) || o.userData.robot) return;
+      if (!cache.has(mt.map)) cache.set(mt.map, autoNormal(mt.map, mt.map.repeat.x > 1.5 ? 2.2 : 1.2));
+      const n = cache.get(mt.map); if (n) { mt.normalMap = n; mt.normalScale.set(0.8, 0.8); mt.needsUpdate = true; }
+    });
     scene.environment = this.current.env.texture;
     this.applyShadowQuality();
     this.splats = 0;
@@ -2087,10 +2345,10 @@ const Arena = {
   dispose() {
     if (!this.group) return;
     const geos = new Set(), mats = new Set(), texs = new Set();
-    const cached = new Set(GC.values());
+    const cached = new Set(GC.values()), base = baseTextureSet();
     this.group.traverse(o => {
       if (o.geometry && !cached.has(o.geometry)) geos.add(o.geometry);
-      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { mats.add(m); for (const k of ['map', 'roughnessMap', 'alphaMap', 'emissiveMap']) if (m[k] && m[k] !== TEX.panel && m[k] !== TEX.grunge && m[k] !== TEX.soft) texs.add(m[k]); });
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { mats.add(m); for (const k of ['map', 'roughnessMap', 'alphaMap', 'emissiveMap', 'normalMap', 'metalnessMap']) if (m[k] && !base.has(m[k])) texs.add(m[k]); });
     });
     geos.forEach(x => x.dispose()); mats.forEach(x => x.dispose()); texs.forEach(x => x.dispose());
     if (this.current && this.current.env) this.current.env.dispose();
@@ -2121,6 +2379,12 @@ const Arena = {
   },
 };
 const _av = V3();
+
+function baseTextureSet() {
+  const s = new Set([TEX.panel, TEX.grunge, TEX.soft]);
+  for (const k of ['pA', 'pB', 'pC', 'pQ']) if (TEX[k]) { s.add(TEX[k].map); s.add(TEX[k].normal); s.add(TEX[k].metal); }
+  return s;
+}
 
 // ---- 40_fighter.js
 // ============================================================================
@@ -2170,7 +2434,7 @@ class Ragdoll {
     const h = 1 / 120;
     for (const n of NODE_NAMES) {
       const up = ['head', 'chest', 'shL', 'shR'].includes(n) ? 1 : n.startsWith('ft') ? 0.15 : 0.6;
-      const v = _t1.copy(dir).multiplyScalar(power * up * rand(0.85, 1.15)); v.y += (n === 'head' || n === 'chest') ? 1.6 + power * 0.25 : 0.6;
+      const v = _t1.copy(dir).multiplyScalar(power * 0.8 * up * rand(0.85, 1.15)); v.y += (n === 'head' || n === 'chest') ? 1.1 + power * 0.15 : 0.4;
       v.x += rand(-0.4, 0.4); v.z += rand(-0.4, 0.4);
       this.p[n].o.addScaledVector(v, -h);
     }
@@ -2184,7 +2448,7 @@ class Ragdoll {
       for (const n of NODE_NAMES) {
         const P = this.p[n];
         const vx = (P.x.x - P.o.x) * 0.996, vy = (P.x.y - P.o.y) * 0.996, vz = (P.x.z - P.o.z) * 0.996;
-        P.o.copy(P.x); P.x.x += vx; P.x.y += vy - 13.5 * h * h; P.x.z += vz;
+        P.o.copy(P.x); P.x.x += vx; P.x.y += vy - GRAV * h * h; P.x.z += vz;
       }
       for (let it = 0; it < 8; it++) {
         for (const c of this.c) {
@@ -2226,6 +2490,8 @@ class Ragdoll {
     solveLook(R.hipL, R.knL, P.knL, P.ftL, fwd); solveLook(R.hipR, R.knR, P.knR, P.ftR, fwd);
     const yaw = Math.atan2(fwd.x, fwd.z);
     for (const [ft, p] of [[R.footL, P.ftL], [R.footR, P.ftR]]) { ft.position.set(p.x, Math.max(RING_Y, p.y - d.ankle), p.z); ft.rotation.set(0, yaw, 0); }
+    if (R.wheeled) R.footR.position.copy(R.footL.position).addScaledVector(X, -2 * d.stanceW);
+    updatePistons(R);
   }
 }
 function solveLook(a, b, mid, end, up) { a.up.copy(up); a.lookAt(mid); a.updateMatrixWorld(true); b.up.copy(up); b.lookAt(end); b.updateMatrixWorld(true); }
@@ -2238,12 +2504,12 @@ class Fighter {
     const s = def.stats, d = def.dims;
     this.maxHp = 760 + s.armor * 45;
     this.powerMul = 0.72 + s.power * 0.055;
-    this.speedMul = 0.8 + s.speed * 0.045;
-    this.moveSpeed = 1.55 + s.speed * 0.15;
+    this.speedMul = (0.8 + s.speed * 0.045) * 0.9;
+    this.moveSpeed = (1.25 + s.speed * 0.13) * (d.wheeled ? 1.15 : 1);
     this.stamMax = 70 + s.stamina * 7;
     const L = d.upper + d.fore;
     this.reach = Math.sqrt(Math.max(0.1, L * L - Math.pow(d.shX * 0.55, 2))) + 0.38;
-    this.radius = 0.5;
+    this.radius = 0.56;
     this.sp = {}; for (const k of ['rx', 'ry', 'rz', 'hx', 'hy', 'hz', 'cr']) this.sp[k] = { x: 0, v: 0 };
     this.feet = { L: { p: V3(), from: V3(), to: V3(), t: 1, lift: 0 }, R: { p: V3(), from: V3(), to: V3(), t: 1, lift: 0 } };
     this.headW = V3(); this.chestW = V3(); this.nodes = makeNodeSet();
@@ -2281,6 +2547,7 @@ class Fighter {
     this.impactT = mv.w + mv.s; this.totalT = mv.w + mv.s + mv.r; this.punchId++;
     this.setState('punch'); this.stats.thrown++; this.restT = 0;
     SFX.whoosh(mv.power);
+    if (mv.power > 0.8) { SFX.hiss(0.5); const b = this.rig.chest.localToWorld(_t1.set(this.move.hand * 0.3, 0.35, -0.5)); for (let i = 0; i < 3; i++) FX.smoke.emit(b.x, b.y, b.z, rand(-.3, .3), rand(0.6, 1.4), rand(-.3, .3), 1.1, 0.25, 1.1, 0.75, 0.77, 0.8, 0.22, -0.2, 1.5); }
   }
   startDodge(dir) { this.stam -= 6; this.dodgeDir = dir; this.setState('dodge', DODGE_T); this.knock.addScaledVector(_lf.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)), dir * 1.4); SFX.whoosh(0.4); }
   get iframes() { return this.state === 'dodge' && this.st > 0.03 && this.st < 0.3; }
@@ -2427,7 +2694,8 @@ class Fighter {
     const shH = d.hipH + d.spineY + d.chestY + d.shY;
     let crouch = 0, lean = 0, twist = 0, roll = 0, swayX = 0;
     const idle = this.state === 'idle' || this.state === 'blockstun';
-    const bob = Math.sin(t * 7.2) * (idle ? 0.025 : 0.01) + Math.abs(Math.sin(t * 9)) * 0.03 * clamp(this.speedNow, 0, 1);
+    const bob = d.wheeled ? Math.sin(t * 3) * 0.012 : Math.sin(t * 4.2) * (idle ? 0.03 : 0.012) + Math.abs(Math.sin(t * 5.5)) * 0.035 * clamp(this.speedNow, 0, 1);
+    if (d.wheeled) { const fv = this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw); this._acc = damp(this._acc || 0, (fv - (this._fv || 0)) / Math.max(dt, 1e-3), 6, dt); this._fv = fv; lean += clamp(this._acc * 0.04, -0.2, 0.2) + fv * 0.03; }
     // hand targets in root space
     const hands = this._hands || (this._hands = { 1: { p: V3(), pole: V3() }, [-1]: { p: V3(), pole: V3() } });
     for (const s of [1, -1]) {
@@ -2505,20 +2773,29 @@ class Fighter {
     const fwd = this.forward(_fw), left = _lf.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     for (const [k, s] of [['L', 1], ['R', -1]]) {
       const f = this.feet[k], o = this.feet[k === 'L' ? 'R' : 'L'];
-      const ideal = _t3.copy(this.pos).addScaledVector(left, s * d.stanceW + swayX * 0.4).addScaledVector(fwd, s * 0.17);
-      if (f.t < 1) {
-        f.t = Math.min(1, f.t + dt / 0.16); f.p.lerpVectors(f.from, f.to, smooth(f.t)); f.lift = Math.sin(f.t * Math.PI) * 0.13;
-        if (f.t >= 1) { f.lift = 0; SFX.step(0.5 + this.def.stats.armor * 0.05); }
-      } else if (o.t >= 1 && f.p.distanceTo(ideal) > 0.2) {
-        f.from.copy(f.p); f.to.copy(ideal).addScaledVector(this.vel, 0.1).addScaledVector(this.knock, 0.08); f.t = 0;
+      const ideal = _t3.copy(this.pos).addScaledVector(left, s * d.stanceW + swayX * 0.4).addScaledVector(fwd, s * (d.footFwd ?? 0.17));
+      if (d.wheeled) { f.p.copy(ideal); f.lift = 0; f.t = 1; }
+      else if (f.t < 1) {
+        f.t = Math.min(1, f.t + dt / 0.27); f.p.lerpVectors(f.from, f.to, smooth(f.t)); f.lift = Math.sin(f.t * Math.PI) * 0.17;
+        if (f.t >= 1) { f.lift = 0; this.footfall(f.p); }
+      } else if (o.t >= 1 && f.p.distanceTo(ideal) > 0.26) {
+        f.from.copy(f.p); f.to.copy(ideal).addScaledVector(this.vel, 0.16).addScaledVector(this.knock, 0.1); f.t = 0;
       }
       const foot = s > 0 ? R.footL : R.footR;
       const fl = R.root.worldToLocal(_t4.set(f.p.x, RING_Y + f.lift, f.p.z));
-      foot.position.copy(fl); foot.rotation.set(0, s * 0.18, 0);
+      foot.position.copy(fl); foot.rotation.set(0, d.wheeled ? 0 : s * 0.18, 0);
       const ank = _t1.set(f.p.x, RING_Y + f.lift + d.ankle, f.p.z);
       const pole = _t2.copy(fwd).addScaledVector(left, s * 0.15);
       solveIK(s > 0 ? R.hipL : R.hipR, s > 0 ? R.knL : R.knR, d.thigh, d.shin, ank, pole, fwd);
     }
+    if (R.wheel) { const fv = this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw) + this.knock.x * Math.sin(this.yaw) + this.knock.z * Math.cos(this.yaw); R.wheel.rotation.x += fv * dt / 0.58; }
+    updatePistons(R);
+  }
+  footfall(p) {
+    const w = 0.5 + this.def.stats.armor * 0.06;
+    SFX.step(w);
+    FX.puff(_t4.set(p.x, RING_Y + 0.05, p.z), 2, 0.32, 0.35, 0.15, 0.6, 0.9);
+    Game.footShake && Game.footShake(p, w);
   }
 }
 
@@ -2792,6 +3069,8 @@ const Cam = {
       const v = Game.victim, w = Game.winner; const vp = v.ragPos();
       const m = _c3.lerpVectors(vp, w.pos, 0.4); const ang = this.mt * 0.18 + 2;
       tp.set(m.x + Math.sin(ang) * 5.5, up + 1.3 + this.mt * 0.06, m.z + Math.cos(ang) * 5.5); tl.set(m.x, up + 1.0, m.z);
+    } else if (this.mode === 'fixed') {
+      tp.copy(this.fixedPos); tl.copy(this.fixedLook);
     } else if (this.mode === 'corner') {
       const m = _c3.addVectors(a.pos, b.pos).multiplyScalar(0.5);
       tp.set(m.x + 7, up + 3.6, m.z - 7.5); tl.set(m.x, up + 1.2, m.z);
@@ -2857,7 +3136,7 @@ const HUD = {
 // ============================================================================
 // GAME FLOW
 // ============================================================================
-const LADDER_ORDER = ['spectra', 'belljar', 'onyx', 'warden', 'mire', 'bulwark'];
+const LADDER_ORDER = ['spectra', 'torque', 'belljar', 'onyx', 'warden', 'mire', 'bulwark'];
 const LADDER_DIFF = ['rookie', 'rookie', 'contender', 'contender', 'champion'];
 const LADDER_ARENA = ['tanker', 'carnival', 'foundry', 'tanker', 'reactor'];
 
@@ -3123,6 +3402,7 @@ const Game = {
   },
   // ---- event hooks used by resolveHit
   hitstop(t) { this.hitstopT = Math.max(this.hitstopT, t); },
+  footShake(p, w) { if (this.mode !== 'fight') return; const d = camera.position.distanceTo(p); Cam.shake(Math.max(0, 0.05 * w - d * 0.006)); },
   shake(a) { Cam.shake(a); },
   onHit(a, d, dmg, mv, body) {
     this.excite = Math.min(1, this.excite + dmg / 350);
@@ -3299,7 +3579,7 @@ async function boot() {
   Game.setShowcase(UI.sel.p1);
   HUD.init(); Input.init(); UI.init();
   $('loading').remove();
-  window.__ironvolt = { Game, Arena, Cam, settings, FX };
+  window.__ironvolt = { Game, Arena, Cam, settings, FX, Fighter, ROBOT, V3 };
   requestAnimationFrame(loop);
 }
 boot();

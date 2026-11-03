@@ -128,7 +128,7 @@ class Ropes {
     this.heights = [0.62, 1.12, 1.62];
     this.corners = [V3(-H, 0, -H), V3(H, 0, -H), V3(H, 0, H), V3(-H, 0, H)];
     this.normals = [V3(0, 0, -1), V3(1, 0, 0), V3(0, 0, 1), V3(-1, 0, 0)];
-    this.mats = colors.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.45, metalness: 0.1, emissive: c, emissiveIntensity: 0.12 }));
+    this.mats = colors.map(c => new THREE.MeshStandardMaterial({ color: new THREE.Color(c).multiplyScalar(0.7), roughness: 0.55, metalness: 0.05 }));
     const geo = new THREE.CylinderGeometry(0.04, 0.04, 1, 8);
     this.sides = this.normals.map((n, i) => ({ n, a: this.corners[i], b: this.corners[(i + 1) % 4], s: 0.5, defl: 0, vel: 0, segs: this.heights.map((h, k) => [new THREE.Mesh(geo, this.mats[k]), new THREE.Mesh(geo, this.mats[k])]) }));
     for (const sd of this.sides) for (const pair of sd.segs) for (const m of pair) { m.castShadow = true; parent.add(m); }
@@ -170,7 +170,7 @@ class Crowd {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 });
     this.mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, n)); this.mesh.count = n;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.data = spots.map(s => ({ x: s[0], y: s[1], z: s[2], yaw: Math.atan2(-s[0], -s[2]) + rand(-0.3, 0.3), ph: rand(0, 6.28), f: rand(5, 9), sc: rand(0.9, 1.12), hype: rand(0.5, 1.2) }));
+    this.data = spots.map(s => ({ x: s[0], y: s[1], z: s[2], yaw: Math.atan2(-s[0], -s[2]) + rand(-0.3, 0.3), ph: rand(0, 6.28), f: rand(5, 9), sc: rand(0.9, 1.12) * HUMAN, hype: rand(0.5, 1.2) }));
     const c = new THREE.Color();
     this.data.forEach((d, i) => { c.set(pick(palette)).multiplyScalar(rand(0.5, 1.1)); this.mesh.setColorAt(i, c); });
     this.mesh.receiveShadow = false; this.mesh.castShadow = false; this.mesh.frustumCulled = false;
@@ -182,7 +182,7 @@ class Crowd {
     const { _m, _q, _p, _s, _e } = this;
     for (let i = 0; i < this.data.length; i++) {
       const d = this.data[i];
-      const hop = Math.max(0, Math.sin(t * d.f + d.ph)) * (0.015 + excite * 0.28 * d.hype);
+      const hop = Math.max(0, Math.sin(t * d.f + d.ph)) * (0.01 + excite * 0.16 * d.hype);
       _p.set(d.x, d.y + hop, d.z); _q.setFromEuler(_e.set(0, d.yaw + Math.sin(t * 0.7 + d.ph) * 0.15, Math.sin(t * d.f * 0.5 + d.ph) * 0.04 * excite)); _s.setScalar(d.sc);
       _m.compose(_p, _q, _s); this.mesh.setMatrixAt(i, _m);
     }
@@ -227,7 +227,7 @@ function lightShaft(parent, w, d, h, tilt, color, alpha) {
       void main(){ float f=abs(dot(vN,vV)); float a=uA*pow(vUv.y,0.7)*f*f*(0.75+0.25*sin(vUv.x*60.0+uTime*0.4)); gl_FragColor=vec4(uC*a,1.0); }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   });
-  const m = new THREE.Mesh(geo, mat); m.scale.set(w, h, d); m.rotation.x = tilt; m.position.y = h / 2; m.renderOrder = 3;
+  const m = new THREE.Mesh(geo, mat); m.scale.set(w, h, d); m.rotation.x = tilt; m.position.y = h / 2; m.renderOrder = 3; m.userData.noAO = true;
   const g = new THREE.Group(); g.add(m); parent.add(g);
   return { group: g, mat };
 }
@@ -274,7 +274,7 @@ function ringLights(g, o) {
   const B = new Batch(); const truss = stdMat(0x1a1b1c, { metalness: 0.8, roughness: 0.4 }); const T = 4.4, y = RING_Y + 8.5;
   for (const s of [-1, 1]) { B.add(G.cube(T * 2, 0.3, 0.3), truss, [0, y, s * T]); B.add(G.cube(0.3, 0.3, T * 2), truss, [s * T, y, 0]); }
   for (const [x, z] of [[-T, -T], [T, -T], [T, T], [-T, T]]) B.add(G.cyl(0.03, 0.03, 30, 4), truss, [x, y + 15, z]);
-  const lamp = stdMat(0x0d0d0d, { metalness: 0.6, roughness: 0.5 }); const lens = basicGlow(o.key || 0xfff1dc, 4);
+  const lamp = stdMat(0x0d0d0d, { metalness: 0.6, roughness: 0.5 }); const lens = basicGlow(o.key || 0xfff1dc, 6);
   for (let i = -1; i <= 1; i++) for (const s of [-1, 1]) {
     B.add(G.cyl(0.22, 0.28, 0.5, 12), lamp, [i * 2.4, y - 0.4, s * T], [s * 0.6, 0, 0]);
     B.add(G.cyl(0.2, 0.2, 0.02, 12), lens, [i * 2.4, y - 0.66, s * T - s * 0.15], [s * 0.6, 0, 0]);
@@ -312,24 +312,24 @@ VENUES.tanker = (g, A) => {
   // catwalks
   for (const s of [-1, 1]) {
     B.add(G.cube(2.6, 0.2, Z * 2 - 2), iron, [s * (X - 1.6), 6, 0]);
-    for (let z = -Z + 1.5; z < Z - 1; z += 1.6) { B.add(G.cyl(0.04, 0.04, 1.1, 6), iron, [s * (X - 2.9), 6.55, z]); }
-    for (const h of [6.6, 7.1]) B.add(G.cyl(0.035, 0.035, Z * 2 - 2, 6), iron, [s * (X - 2.9), h, 0], [Math.PI / 2, 0, 0]);
+    for (let z = -Z + 1.5; z < Z - 1; z += 1.0) { B.add(G.cyl(0.025, 0.025, 0.6, 6), iron, [s * (X - 2.9), 6.4, z]); }
+    for (const h of [6.4, 6.7]) B.add(G.cyl(0.022, 0.022, Z * 2 - 2, 6), iron, [s * (X - 2.9), h, 0], [Math.PI / 2, 0, 0]);
     for (let z = -Z + 3; z < Z; z += 6) B.add(G.cube(0.2, 6, 0.2), iron, [s * (X - 2.9), 3, z]);
   }
   // containers
   const corr = texCorrugated(); corr.repeat.set(2, 1);
   const cMats = [0x8a2d1c, 0x2f5f63, 0x5a6b84, 0xb5621e, 0x6b6e3a].map(c => stdMat(c, { map: corr, roughness: 0.7, metalness: 0.4 }));
-  const cont = (x, z, ry, y = 0, m = pick(cMats)) => B.add(G.cube(6.1, 2.6, 2.44), m, [x, y + 1.3, z], [0, ry, 0]);
+  const cont = (x, z, ry, y = 0, m = pick(cMats)) => B.add(G.cube(3.66, 1.56, 1.46), m, [x, y * 0.6 + 0.78, z], [0, ry, 0]);
   cont(-12.5, -16, 0); cont(-12.5, -16, 0, 2.6); cont(-6, -17.5, 0.05); cont(12, -15.5, 0.1); cont(12.5, 16, 0); cont(12.5, 16, 0.02, 2.6); cont(-13, 15, Math.PI / 2 + 0.1); cont(-6.5, 17.2, 0);
   // barrels, tires, rope coils
   const barrelMats = [stdMat(0x7a1f17, { roughness: .6, metalness: .5 }), stdMat(0x24496b, { roughness: .6, metalness: .5 }), stdMat(0x3c4a2c, { roughness: .6, metalness: .5 })];
   const tireMat = stdMat(0x111111, { roughness: 0.95, metalness: 0 }); const ropeMat = stdMat(0x8a7350, { roughness: 0.95, metalness: 0 });
-  for (const [x, z] of [[-9, -9.5], [-9.8, -8.6], [9.5, 9.6], [10.3, 8.9], [9.7, -10.2], [-10.4, 9.8], [-11, 10.6]]) { const m = pick(barrelMats); B.add(G.cyl(0.42, 0.42, 1.25, 16), m, [x, 0.63, z]); B.add(G.tor(0.42, 0.03, 4, 16), m, [x, 0.35, z], [Math.PI / 2, 0, 0]); B.add(G.tor(0.42, 0.03, 4, 16), m, [x, 0.95, z], [Math.PI / 2, 0, 0]); }
-  for (const [x, z, n] of [[-10.5, -6, 4], [10.5, 5.5, 3], [7, -11, 5]]) for (let k = 0; k < n; k++) B.add(G.tor(0.5, 0.2, 10, 20), tireMat, [x + rand(-.05, .05), 0.2 + k * 0.38, z], [Math.PI / 2, 0, 0]);
-  for (const [x, z] of [[-8, 11], [11, -6.5]]) for (let k = 0; k < 4; k++) B.add(G.tor(0.7 - k * 0.08, 0.1, 8, 24), ropeMat, [x, 0.1 + k * 0.17, z], [Math.PI / 2, 0, 0]);
+  for (const [x, z] of [[-9, -9.5], [-9.8, -8.6], [9.5, 9.6], [10.3, 8.9], [9.7, -10.2], [-10.4, 9.8], [-11, 10.6]]) { const m = pick(barrelMats); B.add(G.cyl(0.23, 0.23, 0.69, 16), m, [x, 0.345, z]); B.add(G.tor(0.23, 0.018, 4, 16), m, [x, 0.19, z], [Math.PI / 2, 0, 0]); B.add(G.tor(0.23, 0.018, 4, 16), m, [x, 0.52, z], [Math.PI / 2, 0, 0]); }
+  for (const [x, z, n] of [[-10.5, -6, 4], [10.5, 5.5, 3], [7, -11, 5]]) for (let k = 0; k < n; k++) B.add(G.tor(0.28, 0.11, 10, 20), tireMat, [x + rand(-.05, .05), 0.11 + k * 0.21, z], [Math.PI / 2, 0, 0]);
+  for (const [x, z] of [[-8, 11], [11, -6.5]]) for (let k = 0; k < 4; k++) B.add(G.tor(0.4 - k * 0.045, 0.055, 8, 24), ropeMat, [x, 0.055 + k * 0.095, z], [Math.PI / 2, 0, 0]);
   // crowd barriers
   const barMat = stdMat(0x8f979a, { metalness: 0.85, roughness: 0.35 });
-  for (const s of [-1, 1]) for (let k = -8; k <= 8; k += 2.2) { B.add(G.cyl(0.03, 0.03, 2.2, 6), barMat, [k, 1.05, s * 8.4], [0, 0, Math.PI / 2]); B.add(G.cyl(0.03, 0.03, 2.2, 6), barMat, [s * 8.4, 1.05, k], [Math.PI / 2, 0, 0]); B.add(G.cyl(0.025, 0.025, 1.05, 6), barMat, [k, 0.52, s * 8.4]); B.add(G.cyl(0.025, 0.025, 1.05, 6), barMat, [s * 8.4, 0.52, k]); }
+  for (const s of [-1, 1]) for (let k = -6.6; k <= 6.6; k += 1.2) { B.add(G.cyl(0.018, 0.018, 1.2, 6), barMat, [k, 0.58, s * 7.0], [0, 0, Math.PI / 2]); B.add(G.cyl(0.018, 0.018, 1.2, 6), barMat, [s * 7.0, 0.58, k], [Math.PI / 2, 0, 0]); B.add(G.cyl(0.014, 0.014, 0.58, 6), barMat, [k, 0.29, s * 7.0]); B.add(G.cyl(0.014, 0.014, 0.58, 6), barMat, [s * 7.0, 0.29, k]); }
   // pendant lamps
   const shade = stdMat(0x2a2d24, { metalness: 0.6, roughness: 0.5, side: THREE.DoubleSide }); const bulb = basicGlow(0xffb060, 6);
   for (const [x, z] of [[-7, -7], [7, -7], [7, 7], [-7, 7], [0, -12], [0, 12]]) {
@@ -365,8 +365,8 @@ VENUES.tanker = (g, A) => {
   const sun = new THREE.DirectionalLight(0xc8dcff, 1.1); sun.position.set(2, 30, 6); g.add(sun, sun.target);
   A.dust = dustField(g, 500, [-5, 5, 1, Hh, -4, 4], [1, 0.95, 0.85], 0.045);
   // crowd
-  const spots = crowdRing(9.2, 4, 0.75, 0, 0, 1.0, (x, z) => Math.abs(x) > X - 1 || Math.abs(z) > Z - 1 || (Math.abs(x) > 11 && Math.abs(z) > 13));
-  for (const s of [-1, 1]) for (let z = -Z + 2; z < Z - 2; z += 0.75) spots.push([s * (X - 1.8 + rand(-.4, .4)), 6.1, z]);
+  const spots = crowdRing(7.5, 7, 0.48, 0, 0, 0.55, (x, z) => Math.abs(x) > X - 1 || Math.abs(z) > Z - 1 || (Math.abs(x) > 10.5 && Math.abs(z) > 13) || (Math.abs(x) > 8.5 && Math.abs(z) > 8.5 && Math.abs(Math.abs(x) - Math.abs(z)) < 1.6));
+  for (const s of [-1, 1]) for (let z = -Z + 2; z < Z - 2; z += 0.45) for (const o of [0, 0.5]) spots.push([s * (X - 1.6 - o + rand(-.1, .1)), 6.1, z + o * 0.2]);
   A.crowd = new Crowd(g, spots, ['#7a6a5a', '#4a5560', '#6b3a2a', '#8a8070', '#2f3a3a', '#5a4a3a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -403,30 +403,30 @@ VENUES.foundry = (g, A) => {
   B.add(G.cube(24, 1, 0.1), hazMat, [0, 14.4, Z - 0.75]);
   // hazard floor lines + barriers
   for (const s of [-1, 1]) { B.add(G.cube(X * 2 - 4, 0.02, 0.3), yel, [0, 0.01, s * 10.5]); B.add(G.cube(0.3, 0.02, 21), yel, [s * 10.5, 0.01, 0]); }
-  for (const s of [-1, 1]) for (let k = -7.5; k <= 7.5; k += 2.5) { B.add(G.box(2.3, 0.85, 0.5, 0.05), hazMat, [k, 0.43, s * 8.6]); B.add(G.box(0.5, 0.85, 2.3, 0.05), hazMat, [s * 8.6, 0.43, k]); }
+  for (const s of [-1, 1]) for (let k = -6.6; k <= 6.6; k += 1.32) { B.add(G.box(1.25, 0.47, 0.28, 0.03), hazMat, [k, 0.24, s * 7.0]); B.add(G.box(0.28, 0.47, 1.25, 0.03), hazMat, [s * 7.0, 0.24, k]); }
   // crates & carts
   const crate = stdMat(0x5a4a33, { map: TEX.panel, roughness: 0.8 });
-  for (const [x, z, n] of [[-15, 8, 3], [16, 6, 2], [15, -9, 2], [-12, 14, 2], [17, 16, 3]]) for (let k = 0; k < n; k++) B.add(G.box(1.4, 1.4, 1.4, 0.04), crate, [x + rand(-.2, .2), 0.7 + k * 1.4, z + rand(-.2, .2)], [0, rand(-.2, .2), 0]);
-  B.add(G.cube(1.5, 1.4, 2.6), yel, [-14, 0.9, -4]); B.add(G.cube(0.2, 3.2, 0.2), steel, [-14.7, 1.8, -5.2]); B.add(G.cube(0.2, 3.2, 0.2), steel, [-13.3, 1.8, -5.2]);
-  for (const [x, z] of [[-14.6, -3], [-13.4, -3], [-14.6, -5], [-13.4, -5]]) B.add(G.cyl(0.35, 0.35, 0.3, 14), stdMat(0x111111, { roughness: .9 }), [x, 0.35, z], [0, 0, Math.PI / 2]);
+  for (const [x, z, n] of [[-15, 8, 3], [16, 6, 2], [15, -9, 2], [-12, 14, 2], [17, 16, 3], [-9.5, 11, 2], [10, -11.5, 2]]) for (let k = 0; k < n; k++) B.add(G.box(0.8, 0.8, 0.8, 0.03), crate, [x + rand(-.1, .1), 0.4 + k * 0.8, z + rand(-.1, .1)], [0, rand(-.2, .2), 0]);
+  B.add(G.cube(0.9, 0.84, 1.56), yel, [-12, 0.54, -4]); B.add(G.cube(0.12, 1.9, 0.12), steel, [-12.4, 1.0, -4.85]); B.add(G.cube(0.12, 1.9, 0.12), steel, [-11.6, 1.0, -4.85]);
+  for (const [x, z] of [[-12.4, -3.4], [-11.6, -3.4], [-12.4, -4.6], [-11.6, -4.6]]) B.add(G.cyl(0.2, 0.2, 0.18, 14), stdMat(0x111111, { roughness: .9 }), [x, 0.2, z], [0, 0, Math.PI / 2]);
   // scaffolds around dormant mechs
   const mechSpots = [[-13, -18, 0.55], [13, -18, -0.55]];
   for (const [mx, mz] of mechSpots) {
-    for (const [dx, dz] of [[-3.5, -3], [3.5, -3], [-3.5, 3], [3.5, 3]]) B.add(G.cube(0.25, 12, 0.25), yel, [mx + dx, 6, mz + dz]);
-    for (const h of [4.5, 8.5]) { B.add(G.cube(7.2, 0.18, 1.6), steel, [mx, h, mz + 3.2]); B.add(G.cube(7.2, 0.05, 0.05), yel, [mx, h + 1.0, mz + 4]); for (let k = -3.5; k <= 3.5; k += 1.75) B.add(G.cyl(0.03, 0.03, 1, 5), yel, [mx + k, h + 0.5, mz + 4]); }
-    B.add(G.cube(7.2, 0.25, 0.25), yel, [mx, 12, mz - 3]); B.add(G.cube(7.2, 0.25, 0.25), yel, [mx, 12, mz + 3]);
+    for (const [dx, dz] of [[-3, -2.4], [3, -2.4], [-3, 2.4], [3, 2.4]]) B.add(G.cube(0.2, 7, 0.2), yel, [mx + dx, 3.5, mz + dz]);
+    for (const h of [2.4, 4.4]) { B.add(G.cube(6.2, 0.12, 1.0), steel, [mx, h, mz + 2.6]); B.add(G.cube(6.2, 0.04, 0.04), yel, [mx, h + 0.55, mz + 3.05]); for (let k = -3; k <= 3; k += 0.75) B.add(G.cyl(0.02, 0.02, 0.55, 5), yel, [mx + k, h + 0.28, mz + 3.05]); }
+    B.add(G.cube(6.2, 0.2, 0.2), yel, [mx, 7, mz - 2.4]); B.add(G.cube(6.2, 0.2, 0.2), yel, [mx, 7, mz + 2.4]);
   }
   B.build(g, { receive: true });
   // dormant giant robots in their cradles
   A.mechs = [];
   mechSpots.forEach(([mx, mz, ry], i) => {
-    const def = ROBOTS[i === 0 ? 0 : 4];
-    const R = buildRobot(def, { dormant: true, scale: 2.5, colors: { primary: i ? 0x6a6f63 : 0x9a9c94, secondary: 0x50544d, dark: 0x1e2122, accent: 0x000000, eye: 0x331100, tertiary: 0x50544d, brown: 0x50544d } });
+    const def = ROBOT(i === 0 ? 'bulwark' : 'warden');
+    const R = buildRobot(def, { dormant: true, scale: 1.75, colors: { primary: i ? 0x6a6f63 : 0x9a9c94, secondary: 0x50544d, dark: 0x1e2122, accent: 0x000000, eye: 0x331100, tertiary: 0x50544d, brown: 0x50544d } });
     R.root.position.set(mx, 0, mz); R.root.rotation.y = ry; g.add(R.root);
     R.root.updateMatrixWorld(true); poseStatic(R, 'dormant');
     R.root.traverse(o => { if (o.isMesh) { o.castShadow = false; } });
     A.mechs.push(R);
-    const welder = new THREE.Object3D(); welder.position.set(mx + (i ? -1.2 : 1.2), 3.2 + i * 2.5, mz + 1.4); g.add(welder);
+    const welder = new THREE.Object3D(); welder.position.set(mx + (i ? -0.9 : 0.9), 1.6 + i * 1.6, mz + 1.1); g.add(welder);
     FX.addEmitter(welder, 'weld', 7);
     const wl = new THREE.PointLight(0x9fd8ff, 0, 8, 2); wl.position.copy(welder.position); g.add(wl); A.weldLights = (A.weldLights || []).concat(wl);
   });
@@ -434,8 +434,8 @@ VENUES.foundry = (g, A) => {
   const work2 = work.clone(); work2.target = new THREE.Object3D(); work2.target.position.set(13, 6, -18); g.add(work2, work2.target);
   const ban = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), stdMat(0xffffff, { map: texBanner(['BAY 9', 'AUTHORISED FRAMES ONLY · LIFT ZONE'], '#1a1f22', '#f2b400'), roughness: 0.9 })); ban.position.set(-X + 0.7, 10, 6); ban.rotation.y = Math.PI / 2; g.add(ban);
   A.dust = dustField(g, 400, [-15, 15, 1, 16, -20, 20], [0.8, 0.9, 1], 0.04);
-  const spots = crowdRing(9.6, 4, 0.75, 0, 0, 1.0, (x, z) => (z < -11 && Math.abs(x) > 8) || Math.abs(x) > X - 1 || Math.abs(z) > Z - 2);
-  for (const [mx, mz] of mechSpots) for (const h of [4.6, 8.6]) for (let k = -3.2; k <= 3.2; k += 0.7) spots.push([mx + k, h, mz + 3.4 + rand(-.2, .2)]);
+  const spots = crowdRing(7.6, 7, 0.48, 0, 0, 0.55, (x, z) => (z < -11 && Math.abs(x) > 8) || Math.abs(x) > X - 1 || Math.abs(z) > Z - 2);
+  for (const [mx, mz] of mechSpots) for (const h of [2.46, 4.46]) for (let k = -2.9; k <= 2.9; k += 0.42) spots.push([mx + k, h, mz + 2.7 + rand(-.15, .15)]);
   A.crowd = new Crowd(g, spots, ['#c98a1a', '#3d4a52', '#5a6870', '#2a3238', '#c9c2b0', '#7a3a1a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -447,7 +447,7 @@ VENUES.carnival = (g, A) => {
   const L = ringLights(g, { key: 0xffe8d0, keyI: 1350, rims: [0xff4a9a, 0x5ac8ff], rimI: 520, sky: 0x4050a0, ground: 0x1a1018, hemiI: 0.4 });
   // sky dome
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: {}, vertexShader: `varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`, fragmentShader: `varying vec3 vP; void main(){ float h=clamp(vP.y,0.0,1.0); vec3 a=vec3(0.22,0.1,0.28), b=vec3(0.02,0.03,0.09); vec3 c=mix(a,b,pow(h,0.45)); gl_FragColor=vec4(c,1.0); }` });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), skyMat); g.add(sky);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), skyMat); sky.userData.noAO = true; g.add(sky);
   const sp = new Float32Array(1200 * 3); for (let i = 0; i < 1200; i++) { const a = rand(0, 6.28), e = rand(0.12, 1.4), r = 170; sp[i * 3] = Math.cos(a) * Math.cos(e) * r; sp[i * 3 + 1] = Math.sin(e) * r; sp[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r; }
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
   g.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xdfe6ff, size: 1.1, sizeAttenuation: false, fog: false })));
@@ -500,13 +500,13 @@ VENUES.carnival = (g, A) => {
   const cl = new THREE.PointLight(0xffb060, 120, 18, 1.6); cl.position.set(-22, 4.5, -12); g.add(cl);
   // arcade cabinets
   for (let k = 0; k < 4; k++) {
-    const x = 14 + k * 1.3, z = 12.5;
+    const x = 12 + k * 0.72, z = 10.5;
     const scr = canvasTex(128, 128, (gg, w, h) => { gg.fillStyle = '#000'; gg.fillRect(0, 0, w, h); const hue = randi(0, 360); for (let i = 0; i < 40; i++) { gg.fillStyle = `hsl(${hue + rand(-40, 40)},90%,60%)`; gg.fillRect(randi(0, 15) * 8, randi(0, 15) * 8, 8, 8); } gg.fillStyle = '#fff'; gg.font = 'bold 16px monospace'; gg.fillText(k === 2 ? 'TILT' : 'INSERT', 16, 112); });
     const cab = stdMat([0x2a3a8a, 0x8a2a5a, 0x1a1a1a, 0x2a7a5a][k], { roughness: .5 });
-    B.add(G.box(1.1, 2.1, 0.9, 0.05), cab, [x, 1.05, z], [0, Math.PI + (k === 2 ? 0.25 : 0), k === 2 ? 0.1 : 0]);
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.7), new THREE.MeshBasicMaterial({ map: scr, color: new THREE.Color(k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6) })); s.position.set(x, 1.45, z - 0.46); s.rotation.y = Math.PI; g.add(s);
+    B.add(G.box(0.6, 1.15, 0.5, 0.03), cab, [x, 0.58, z], [0, Math.PI + (k === 2 ? 0.25 : 0), k === 2 ? 0.1 : 0]);
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.38), new THREE.MeshBasicMaterial({ map: scr, color: new THREE.Color(k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6, k === 2 ? 0.3 : 1.6) })); s.position.set(x, 0.8, z - 0.26); s.rotation.y = Math.PI; g.add(s);
   }
-  const al = new THREE.PointLight(0xff4aa0, 40, 10, 1.8); al.position.set(16, 2.2, 11.5); g.add(al);
+  const al = new THREE.PointLight(0xff4aa0, 30, 8, 1.8); al.position.set(13, 1.4, 9.8); g.add(al);
   // giant broken robot head half buried
   B.add(G.sph(3.2, 24, 16), rustM, [22, 0.6, -6], [0.4, 0.8, 0.3]);
   B.add(G.box(3.8, 1.2, 2.6, 0.3), rustM, [21.2, 0.8, -3.6], [0.3, 0.8, 0.4]);
@@ -523,12 +523,12 @@ VENUES.carnival = (g, A) => {
   g.add(sb);
   // bleachers
   const bl = stdMat(0x4a4f5a, { metalness: 0.7, roughness: 0.5 });
-  for (const s of [-1, 1]) for (let k = 0; k < 5; k++) B.add(G.cube(1.0, 0.12, 18), bl, [s * (11 + k * 1.0), 0.5 + k * 0.6, 0]);
-  for (const s of [-1, 1]) for (let z = -9; z <= 9; z += 3) B.add(G.cube(0.12, 3.4, 0.12), bl, [s * 15, 1.7, z]);
+  for (const s of [-1, 1]) for (let k = 0; k < 8; k++) B.add(G.cube(0.55, 0.08, 18), bl, [s * (8.6 + k * 0.55), 0.3 + k * 0.33, 0]);
+  for (const s of [-1, 1]) for (let z = -9; z <= 9; z += 2) B.add(G.cube(0.08, 2.9, 0.08), bl, [s * 12.8, 1.45, z]);
   B.build(g, { receive: true });
   const spots = [];
-  for (const s of [-1, 1]) for (let k = 0; k < 5; k++) for (let z = -8.6; z <= 8.6; z += 0.72) spots.push([s * (11 + k * 1.0), 0.56 + k * 0.6, z + rand(-.1, .1)]);
-  spots.push(...crowdRing(10, 3, 0.85, 0, 0, 1.0, (x, z) => Math.abs(x) > 10.5 || (z > 0 && Math.abs(x) < 6)));
+  for (const s of [-1, 1]) for (let k = 0; k < 8; k++) for (let z = -8.6; z <= 8.6; z += 0.45) spots.push([s * (8.6 + k * 0.55), 0.34 + k * 0.33, z + rand(-.08, .08)]);
+  spots.push(...crowdRing(7.4, 4, 0.48, 0, 0, 0.55, (x, z) => Math.abs(x) > 8.2 || (z > 0 && Math.abs(x) < 5)));
   A.crowd = new Crowd(g, spots, ['#5a4a7a', '#7a3a5a', '#2a4a6a', '#9a8a6a', '#3a3a4a', '#6a2a2a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -585,8 +585,8 @@ VENUES.reactor = (g, A) => {
   const steam = new THREE.Object3D(); steam.position.set(-16, 0.5, 14); g.add(steam); FX.addEmitter(steam, 'steam', 3);
   const steam2 = new THREE.Object3D(); steam2.position.set(17, 0.5, -12); g.add(steam2); FX.addEmitter(steam2, 'steam', 3);
   const spots = [];
-  for (let k = 0; k < 5; k++) { const r0 = 10.6 + k * 1.2, y = 0.6 + k * 0.6; for (let a = 0; a < Math.PI * 2; a += 0.75 / r0) spots.push([Math.cos(a) * r0 + rand(-.1, .1), y, Math.sin(a) * r0 + rand(-.1, .1)]); }
-  for (let a = 0; a < Math.PI * 2; a += 0.04) spots.push([Math.cos(a) * 19.3, 9.2, Math.sin(a) * 19.3]);
+  for (let k = 0; k < 5; k++) { const r0 = 10.6 + k * 1.2, y = 0.6 + k * 0.6; for (let a = 0; a < Math.PI * 2; a += 0.42 / r0) for (const o of [-0.3, 0.25]) spots.push([Math.cos(a) * (r0 + o) + rand(-.05, .05), y, Math.sin(a) * (r0 + o) + rand(-.05, .05)]); }
+  for (let a = 0; a < Math.PI * 2; a += 0.024) spots.push([Math.cos(a) * 19.3, 9.2, Math.sin(a) * 19.3]);
   A.crowd = new Crowd(g, spots, ['#2a3a4a', '#4a5a6a', '#1a2a3a', '#6a7a8a', '#3a2a4a', '#2a4a5a']);
   A.lights = L; A.ropes = ring.ropes; A.floorTex = ring.floorTex;
 };
@@ -601,6 +601,13 @@ const Arena = {
     this.group = g; this.id = id; this.current = { id };
     FX.clearEmitters();
     VENUES[id](g, this.current);
+    // surface relief for every textured venue material
+    const cache = new Map(), base = baseTextureSet();
+    g.traverse(o => {
+      const mt = o.material; if (!mt || !mt.isMeshStandardMaterial || mt.normalMap || !mt.map || base.has(mt.map) || o.userData.robot) return;
+      if (!cache.has(mt.map)) cache.set(mt.map, autoNormal(mt.map, mt.map.repeat.x > 1.5 ? 2.2 : 1.2));
+      const n = cache.get(mt.map); if (n) { mt.normalMap = n; mt.normalScale.set(0.8, 0.8); mt.needsUpdate = true; }
+    });
     scene.environment = this.current.env.texture;
     this.applyShadowQuality();
     this.splats = 0;
@@ -613,10 +620,10 @@ const Arena = {
   dispose() {
     if (!this.group) return;
     const geos = new Set(), mats = new Set(), texs = new Set();
-    const cached = new Set(GC.values());
+    const cached = new Set(GC.values()), base = baseTextureSet();
     this.group.traverse(o => {
       if (o.geometry && !cached.has(o.geometry)) geos.add(o.geometry);
-      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { mats.add(m); for (const k of ['map', 'roughnessMap', 'alphaMap', 'emissiveMap']) if (m[k] && m[k] !== TEX.panel && m[k] !== TEX.grunge && m[k] !== TEX.soft) texs.add(m[k]); });
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { mats.add(m); for (const k of ['map', 'roughnessMap', 'alphaMap', 'emissiveMap', 'normalMap', 'metalnessMap']) if (m[k] && !base.has(m[k])) texs.add(m[k]); });
     });
     geos.forEach(x => x.dispose()); mats.forEach(x => x.dispose()); texs.forEach(x => x.dispose());
     if (this.current && this.current.env) this.current.env.dispose();
@@ -647,3 +654,9 @@ const Arena = {
   },
 };
 const _av = V3();
+
+function baseTextureSet() {
+  const s = new Set([TEX.panel, TEX.grunge, TEX.soft]);
+  for (const k of ['pA', 'pB', 'pC', 'pQ']) if (TEX[k]) { s.add(TEX[k].map); s.add(TEX[k].normal); s.add(TEX[k].metal); }
+  return s;
+}

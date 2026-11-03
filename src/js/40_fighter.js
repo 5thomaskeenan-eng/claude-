@@ -45,7 +45,7 @@ class Ragdoll {
     const h = 1 / 120;
     for (const n of NODE_NAMES) {
       const up = ['head', 'chest', 'shL', 'shR'].includes(n) ? 1 : n.startsWith('ft') ? 0.15 : 0.6;
-      const v = _t1.copy(dir).multiplyScalar(power * up * rand(0.85, 1.15)); v.y += (n === 'head' || n === 'chest') ? 1.6 + power * 0.25 : 0.6;
+      const v = _t1.copy(dir).multiplyScalar(power * 0.8 * up * rand(0.85, 1.15)); v.y += (n === 'head' || n === 'chest') ? 1.1 + power * 0.15 : 0.4;
       v.x += rand(-0.4, 0.4); v.z += rand(-0.4, 0.4);
       this.p[n].o.addScaledVector(v, -h);
     }
@@ -59,7 +59,7 @@ class Ragdoll {
       for (const n of NODE_NAMES) {
         const P = this.p[n];
         const vx = (P.x.x - P.o.x) * 0.996, vy = (P.x.y - P.o.y) * 0.996, vz = (P.x.z - P.o.z) * 0.996;
-        P.o.copy(P.x); P.x.x += vx; P.x.y += vy - 13.5 * h * h; P.x.z += vz;
+        P.o.copy(P.x); P.x.x += vx; P.x.y += vy - GRAV * h * h; P.x.z += vz;
       }
       for (let it = 0; it < 8; it++) {
         for (const c of this.c) {
@@ -101,6 +101,8 @@ class Ragdoll {
     solveLook(R.hipL, R.knL, P.knL, P.ftL, fwd); solveLook(R.hipR, R.knR, P.knR, P.ftR, fwd);
     const yaw = Math.atan2(fwd.x, fwd.z);
     for (const [ft, p] of [[R.footL, P.ftL], [R.footR, P.ftR]]) { ft.position.set(p.x, Math.max(RING_Y, p.y - d.ankle), p.z); ft.rotation.set(0, yaw, 0); }
+    if (R.wheeled) R.footR.position.copy(R.footL.position).addScaledVector(X, -2 * d.stanceW);
+    updatePistons(R);
   }
 }
 function solveLook(a, b, mid, end, up) { a.up.copy(up); a.lookAt(mid); a.updateMatrixWorld(true); b.up.copy(up); b.lookAt(end); b.updateMatrixWorld(true); }
@@ -113,12 +115,12 @@ class Fighter {
     const s = def.stats, d = def.dims;
     this.maxHp = 760 + s.armor * 45;
     this.powerMul = 0.72 + s.power * 0.055;
-    this.speedMul = 0.8 + s.speed * 0.045;
-    this.moveSpeed = 1.55 + s.speed * 0.15;
+    this.speedMul = (0.8 + s.speed * 0.045) * 0.9;
+    this.moveSpeed = (1.25 + s.speed * 0.13) * (d.wheeled ? 1.15 : 1);
     this.stamMax = 70 + s.stamina * 7;
     const L = d.upper + d.fore;
     this.reach = Math.sqrt(Math.max(0.1, L * L - Math.pow(d.shX * 0.55, 2))) + 0.38;
-    this.radius = 0.5;
+    this.radius = 0.56;
     this.sp = {}; for (const k of ['rx', 'ry', 'rz', 'hx', 'hy', 'hz', 'cr']) this.sp[k] = { x: 0, v: 0 };
     this.feet = { L: { p: V3(), from: V3(), to: V3(), t: 1, lift: 0 }, R: { p: V3(), from: V3(), to: V3(), t: 1, lift: 0 } };
     this.headW = V3(); this.chestW = V3(); this.nodes = makeNodeSet();
@@ -156,6 +158,7 @@ class Fighter {
     this.impactT = mv.w + mv.s; this.totalT = mv.w + mv.s + mv.r; this.punchId++;
     this.setState('punch'); this.stats.thrown++; this.restT = 0;
     SFX.whoosh(mv.power);
+    if (mv.power > 0.8) { SFX.hiss(0.5); const b = this.rig.chest.localToWorld(_t1.set(this.move.hand * 0.3, 0.35, -0.5)); for (let i = 0; i < 3; i++) FX.smoke.emit(b.x, b.y, b.z, rand(-.3, .3), rand(0.6, 1.4), rand(-.3, .3), 1.1, 0.25, 1.1, 0.75, 0.77, 0.8, 0.22, -0.2, 1.5); }
   }
   startDodge(dir) { this.stam -= 6; this.dodgeDir = dir; this.setState('dodge', DODGE_T); this.knock.addScaledVector(_lf.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)), dir * 1.4); SFX.whoosh(0.4); }
   get iframes() { return this.state === 'dodge' && this.st > 0.03 && this.st < 0.3; }
@@ -302,7 +305,8 @@ class Fighter {
     const shH = d.hipH + d.spineY + d.chestY + d.shY;
     let crouch = 0, lean = 0, twist = 0, roll = 0, swayX = 0;
     const idle = this.state === 'idle' || this.state === 'blockstun';
-    const bob = Math.sin(t * 7.2) * (idle ? 0.025 : 0.01) + Math.abs(Math.sin(t * 9)) * 0.03 * clamp(this.speedNow, 0, 1);
+    const bob = d.wheeled ? Math.sin(t * 3) * 0.012 : Math.sin(t * 4.2) * (idle ? 0.03 : 0.012) + Math.abs(Math.sin(t * 5.5)) * 0.035 * clamp(this.speedNow, 0, 1);
+    if (d.wheeled) { const fv = this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw); this._acc = damp(this._acc || 0, (fv - (this._fv || 0)) / Math.max(dt, 1e-3), 6, dt); this._fv = fv; lean += clamp(this._acc * 0.04, -0.2, 0.2) + fv * 0.03; }
     // hand targets in root space
     const hands = this._hands || (this._hands = { 1: { p: V3(), pole: V3() }, [-1]: { p: V3(), pole: V3() } });
     for (const s of [1, -1]) {
@@ -380,20 +384,29 @@ class Fighter {
     const fwd = this.forward(_fw), left = _lf.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
     for (const [k, s] of [['L', 1], ['R', -1]]) {
       const f = this.feet[k], o = this.feet[k === 'L' ? 'R' : 'L'];
-      const ideal = _t3.copy(this.pos).addScaledVector(left, s * d.stanceW + swayX * 0.4).addScaledVector(fwd, s * 0.17);
-      if (f.t < 1) {
-        f.t = Math.min(1, f.t + dt / 0.16); f.p.lerpVectors(f.from, f.to, smooth(f.t)); f.lift = Math.sin(f.t * Math.PI) * 0.13;
-        if (f.t >= 1) { f.lift = 0; SFX.step(0.5 + this.def.stats.armor * 0.05); }
-      } else if (o.t >= 1 && f.p.distanceTo(ideal) > 0.2) {
-        f.from.copy(f.p); f.to.copy(ideal).addScaledVector(this.vel, 0.1).addScaledVector(this.knock, 0.08); f.t = 0;
+      const ideal = _t3.copy(this.pos).addScaledVector(left, s * d.stanceW + swayX * 0.4).addScaledVector(fwd, s * (d.footFwd ?? 0.17));
+      if (d.wheeled) { f.p.copy(ideal); f.lift = 0; f.t = 1; }
+      else if (f.t < 1) {
+        f.t = Math.min(1, f.t + dt / 0.27); f.p.lerpVectors(f.from, f.to, smooth(f.t)); f.lift = Math.sin(f.t * Math.PI) * 0.17;
+        if (f.t >= 1) { f.lift = 0; this.footfall(f.p); }
+      } else if (o.t >= 1 && f.p.distanceTo(ideal) > 0.26) {
+        f.from.copy(f.p); f.to.copy(ideal).addScaledVector(this.vel, 0.16).addScaledVector(this.knock, 0.1); f.t = 0;
       }
       const foot = s > 0 ? R.footL : R.footR;
       const fl = R.root.worldToLocal(_t4.set(f.p.x, RING_Y + f.lift, f.p.z));
-      foot.position.copy(fl); foot.rotation.set(0, s * 0.18, 0);
+      foot.position.copy(fl); foot.rotation.set(0, d.wheeled ? 0 : s * 0.18, 0);
       const ank = _t1.set(f.p.x, RING_Y + f.lift + d.ankle, f.p.z);
       const pole = _t2.copy(fwd).addScaledVector(left, s * 0.15);
       solveIK(s > 0 ? R.hipL : R.hipR, s > 0 ? R.knL : R.knR, d.thigh, d.shin, ank, pole, fwd);
     }
+    if (R.wheel) { const fv = this.vel.x * Math.sin(this.yaw) + this.vel.z * Math.cos(this.yaw) + this.knock.x * Math.sin(this.yaw) + this.knock.z * Math.cos(this.yaw); R.wheel.rotation.x += fv * dt / 0.58; }
+    updatePistons(R);
+  }
+  footfall(p) {
+    const w = 0.5 + this.def.stats.armor * 0.06;
+    SFX.step(w);
+    FX.puff(_t4.set(p.x, RING_Y + 0.05, p.z), 2, 0.32, 0.35, 0.15, 0.6, 0.9);
+    Game.footShake && Game.footShake(p, w);
   }
 }
 

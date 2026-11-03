@@ -7,6 +7,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -34,9 +35,9 @@ const settings = Object.assign({ quality: IS_TOUCH ? 'medium' : 'high', shake: t
 const saveSettings = () => store.set('settings', settings);
 
 const QUALITY = {
-  low: { pr: 1, msaa: 0, bloom: false, shadow: 0, crowd: 0.45 },
-  medium: { pr: 1.35, msaa: 2, bloom: true, shadow: 1024, crowd: 0.75 },
-  high: { pr: 2, msaa: 4, bloom: true, shadow: 2048, crowd: 1 },
+  low: { pr: 1, msaa: 0, bloom: false, shadow: 0, crowd: 0.45, ao: false },
+  medium: { pr: 1.35, msaa: 2, bloom: true, shadow: 2048, crowd: 0.75, ao: false },
+  high: { pr: 2, msaa: 4, bloom: true, shadow: 4096, crowd: 1, ao: true },
 };
 
 // ---------------------------------------------------------------- renderer
@@ -50,13 +51,15 @@ try {
 }
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.95;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.15, 260);
+// world scale: robots are ~2.5 units tall and read as ~4.5 m mechs next to 1-unit humans
+const HUMAN = 0.55, GRAV = 7.2;
 camera.position.set(0, 3, 8);
 
 const GradeShader = {
@@ -96,8 +99,15 @@ function buildComposer() {
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(innerWidth, innerHeight);
   composer.addPass(new RenderPass(scene, camera));
+  if (q.ao) {
+    const ao = new GTAOPass(scene, camera, innerWidth, innerHeight);
+    ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 16 });
+    ao.blendIntensity = 0.95;
+    ao.overrideVisibility = function () { const c = this._visibilityCache; this.scene.traverse(o => { c.set(o, o.visible); if (o.isPoints || o.isLine || o.isSprite || o.userData.noAO) o.visible = false; }); };
+    composer.addPass(ao);
+  }
   bloomPass = null;
-  if (q.bloom) { bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.55, 0.88); composer.addPass(bloomPass); }
+  if (q.bloom) { bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.4, 3.0); composer.addPass(bloomPass); }
   composer.addPass(new OutputPass());
   gradePass = new ShaderPass(GradeShader);
   gradePass.uniforms.uRes.value.set(innerWidth, innerHeight);
@@ -118,7 +128,7 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------- procedural textures
 function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function canvasTex(w, h, draw, { repeat = null, srgb = true, aniso = 8 } = {}) {
-  const c = makeCanvas(w, h); const g = c.getContext('2d'); draw(g, w, h, c);
+  const c = makeCanvas(w, h); const g = c.getContext('2d', { willReadFrequently: true }); draw(g, w, h, c);
   const t = new THREE.CanvasTexture(c);
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso;
@@ -149,13 +159,96 @@ function scratches(g, w, h, n, col, aMax) {
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
   }
 }
+// tangent-space normal map from a height canvas (red channel = height)
+function normalFromHeight(hc, strength = 3) {
+  const w = hc.width, h = hc.height, src = hc.getContext('2d').getImageData(0, 0, w, h).data;
+  const c = makeCanvas(w, h), g = c.getContext('2d'), out = g.createImageData(w, h), d = out.data;
+  const H = (x, y) => src[((((y + h) % h) * w) + ((x + w) % w)) * 4] / 255;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (H(x + 1, y) - H(x - 1, y)) * strength, dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+    d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  }
+  g.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+}
+// normal map derived from an existing colour texture's luminance (for venue surfaces)
+function autoNormal(tex, strength = 2) {
+  const src = tex.userData.canvas; if (!src) return null;
+  const c = makeCanvas(src.width, src.height), g = c.getContext('2d'); g.drawImage(src, 0, 0);
+  const id = g.getImageData(0, 0, c.width, c.height), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; d[i] = d[i + 1] = d[i + 2] = l; }
+  g.putImageData(id, 0, 0);
+  const n = normalFromHeight(c, strength); n.repeat.copy(tex.repeat); return n;
+}
+function linTex(c) { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 function rivet(g, x, y, r = 5) {
   g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(x + 1, y + 1.5, r, 0, 7); g.fill();
   g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(x - .5, y - .5, r * .75, 0, 7); g.fill();
 }
 
+// Matched colour / height / metal-chip maps for armour panels. Variant A: single plate with a cut line,
+// B: 2x2 plates, C: banded plates with vents, Q: quilted padding.
+function panelSet(seed, variant) {
+  const rnd = mulberry32(seed), R = (a, b) => a + rnd() * (b - a), W = 512;
+  const cc = makeCanvas(W, W), hc = makeCanvas(W, W), mc = makeCanvas(W, W);
+  const g = cc.getContext('2d'), h = hc.getContext('2d'), m = mc.getContext('2d');
+  g.fillStyle = '#e4e3df'; g.fillRect(0, 0, W, W);
+  blotches(g, W, W, 60, '0,0,0', .03, .09, 30, 130); blotches(g, W, W, 25, '255,255,255', .03, .07, 30, 90);
+  h.fillStyle = 'rgb(118,118,118)'; h.fillRect(0, 0, W, W);
+  m.fillStyle = '#000'; m.fillRect(0, 0, W, W);
+  if (variant === 'Q') {
+    g.fillStyle = '#d6d4cc'; g.fillRect(0, 0, W, W); noiseFill(g, W, W, 26);
+    const s = 64;
+    for (let y = -s; y < W + s; y += s) for (let x = -s; x < W + s; x += s) {
+      const cx = x + (((y / s) | 0) % 2 ? s / 2 : 0), cy = y;
+      const gr = h.createRadialGradient(cx, cy, 2, cx, cy, s * 0.62); gr.addColorStop(0, 'rgb(205,205,205)'); gr.addColorStop(1, 'rgb(70,70,70)');
+      h.fillStyle = gr; h.beginPath(); h.moveTo(cx, cy - s / 2); h.lineTo(cx + s / 2, cy); h.lineTo(cx, cy + s / 2); h.lineTo(cx - s / 2, cy); h.closePath(); h.fill();
+      g.strokeStyle = 'rgba(40,38,34,.45)'; g.lineWidth = 2; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(cx, cy - s / 2); g.lineTo(cx + s / 2, cy); g.lineTo(cx, cy + s / 2); g.lineTo(cx - s / 2, cy); g.closePath(); g.stroke(); g.setLineDash([]);
+    }
+    blotches(g, W, W, 40, '60,50,40', .05, .15, 20, 90);
+    return { map: (() => { const t = linTex(cc); t.colorSpace = THREE.SRGBColorSpace; return t; })(), normal: normalFromHeight(hc, 2.2), metal: linTex(mc) };
+  }
+  let rects = [];
+  if (variant === 'A') rects = [[16, 16, W - 32, W - 32]];
+  else if (variant === 'B') { const sx = R(0.4, 0.6) * W, sy = R(0.4, 0.6) * W; rects = [[14, 14, sx - 20, sy - 20], [sx + 6, 14, W - sx - 20, sy - 20], [14, sy + 6, sx - 20, W - sy - 20], [sx + 6, sy + 6, W - sx - 20, W - sy - 20]]; }
+  else { rects = [[14, 14, W - 28, W * 0.3], [14, W * 0.3 + 26, W - 28, W * 0.34], [14, W * 0.64 + 38, W - 28, W * 0.36 - 52]]; }
+  for (const [x, y, w, hh] of rects) {
+    h.fillStyle = 'rgb(150,150,150)'; h.fillRect(x, y, w, hh);
+    h.strokeStyle = 'rgb(25,25,25)'; h.lineWidth = 7; h.strokeRect(x, y, w, hh);
+    h.strokeStyle = 'rgb(175,175,175)'; h.lineWidth = 3; h.strokeRect(x + 8, y + 8, w - 16, hh - 16);
+    g.strokeStyle = 'rgba(12,12,12,.85)'; g.lineWidth = 5; g.strokeRect(x, y, w, hh);
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x + 5, y + hh - 5); g.lineTo(x + 5, y + 5); g.lineTo(x + w - 5, y + 5); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.moveTo(x + w - 5, y + 5); g.lineTo(x + w - 5, y + hh - 5); g.lineTo(x + 5, y + hh - 5); g.stroke();
+    // rivets along the plate edges
+    const n = Math.max(2, Math.round(w / 70));
+    for (let k = 0; k <= n; k++) for (const yy of [y + 16, y + hh - 16]) {
+      const xx = x + 16 + (w - 32) * k / n; rivet(g, xx, yy, 4.5);
+      const gr = h.createRadialGradient(xx, yy, 0, xx, yy, 6); gr.addColorStop(0, 'rgb(240,240,240)'); gr.addColorStop(1, 'rgba(150,150,150,0)'); h.fillStyle = gr; h.fillRect(xx - 6, yy - 6, 12, 12);
+    }
+    // paint chips along edges reveal bare metal
+    for (let k = 0; k < 18; k++) {
+      const side = (rnd() * 4) | 0, t = rnd();
+      const cx = side === 0 ? x + t * w : side === 1 ? x + w : side === 2 ? x + t * w : x, cy = side === 0 ? y : side === 1 ? y + t * hh : side === 2 ? y + hh : y + t * hh;
+      const rx = R(3, 13), ry = R(2, 6), a = R(0, 3);
+      g.fillStyle = '#a7a7a3'; g.beginPath(); g.ellipse(cx, cy, rx, ry, a, 0, 7); g.fill();
+      m.fillStyle = '#fff'; m.beginPath(); m.ellipse(cx, cy, rx, ry, a, 0, 7); m.fill();
+      h.fillStyle = 'rgb(105,105,105)'; h.beginPath(); h.ellipse(cx, cy, rx, ry, a, 0, 7); h.fill();
+    }
+  }
+  if (variant === 'A') { const y0 = R(0.55, 0.7) * W; g.strokeStyle = 'rgba(12,12,12,.7)'; g.lineWidth = 3; g.beginPath(); g.moveTo(16, y0); g.lineTo(W * 0.42, y0); g.lineTo(W * 0.5, W - 16); g.stroke(); h.strokeStyle = 'rgb(40,40,40)'; h.lineWidth = 4; h.beginPath(); h.moveTo(16, y0); h.lineTo(W * 0.42, y0); h.lineTo(W * 0.5, W - 16); h.stroke(); }
+  if (variant === 'C') for (let k = 0; k < 7; k++) { const x = W * 0.22 + k * W * 0.08, y = W * 0.38; g.fillStyle = 'rgba(10,10,10,.85)'; g.fillRect(x, y, W * 0.04, W * 0.2); h.fillStyle = 'rgb(15,15,15)'; h.fillRect(x, y, W * 0.04, W * 0.2); }
+  scratches(g, W, W, 90, '255,255,255', .28); scratches(g, W, W, 50, '0,0,0', .25);
+  for (let i = 0; i < 60; i++) { h.strokeStyle = 'rgba(90,90,90,.5)'; h.lineWidth = 1; const x = rnd() * W, y = rnd() * W, a = rnd() * 3; h.beginPath(); h.moveTo(x, y); h.lineTo(x + Math.cos(a) * 40, y + Math.sin(a) * 40); h.stroke(); }
+  noiseFill(g, W, W, 12);
+  g.fillStyle = 'rgba(20,20,20,.5)'; g.font = 'bold 20px monospace'; g.fillText((variant === 'C' ? 'HYD-' : 'IV-') + ((seed * 37) % 90 + 10), W - 110, W - 46);
+  const map = linTex(cc); map.colorSpace = THREE.SRGBColorSpace;
+  return { map, normal: normalFromHeight(hc, 3.2), metal: linTex(mc) };
+}
+
 const TEX = {};
 function buildBaseTextures() {
+  TEX.pA = panelSet(11, 'A'); TEX.pB = panelSet(23, 'B'); TEX.pC = panelSet(37, 'C'); TEX.pQ = panelSet(5, 'Q');
   TEX.panel = canvasTex(512, 512, (g, w, h) => {
     g.fillStyle = '#e4e4e2'; g.fillRect(0, 0, w, h);
     blotches(g, w, h, 50, '0,0,0', .03, .09, 30, 120);
@@ -318,11 +411,12 @@ const SFX = {
       this.osc('sine', 140, 60, 0.12, 0.4 * p);
       return;
     }
-    this.osc('sine', 150 * heavy, 38, 0.28, 0.95 * p);
-    this.osc('sine', 75, 30, 0.4, 0.6 * p);
-    this.nz(0.16, 0.9 * p, 'bandpass', 2400, 500, 0.9);
-    this.nz(0.05, 0.7 * p, 'highpass', 5000, 0, 0.7);
-    const base = rand(260, 420);
+    this.osc('sine', 115 * heavy, 30, 0.36, 1.0 * p);
+    this.osc('sine', 55, 24, 0.55, 0.7 * p);
+    this.osc('triangle', 90, 40, 0.25, 0.25 * p);
+    this.nz(0.2, 0.9 * p, 'bandpass', 1800, 380, 0.9);
+    this.nz(0.05, 0.6 * p, 'highpass', 4500, 0, 0.7);
+    const base = rand(170, 290);
     [1, 2.31, 3.77, 5.12].forEach((r, i) => this.osc(i % 2 ? 'square' : 'triangle', base * r, base * r * 0.97, 0.45 - i * 0.07, 0.09 * p / (i + 1)));
   },
   whoosh(power) {
@@ -330,7 +424,8 @@ const SFX = {
     this.nz(0.2, 0.22 * power, 'bandpass', 380, 1700, 2.2, null, 0, 0.05);
     this.osc('sawtooth', 220, 110, 0.18, 0.035 * power);
   },
-  step(v = 1) { if (!this.ready) return; this.osc('sine', 85, 40, 0.12, 0.22 * v); this.nz(0.06, 0.12 * v, 'lowpass', 600, 200); },
+  step(v = 1) { if (!this.ready) return; this.osc('sine', 62, 28, 0.22, 0.38 * v); this.nz(0.1, 0.18 * v, 'lowpass', 500, 120); this.osc('triangle', rand(300, 500), 200, 0.06, 0.03 * v); },
+  hiss(v = 1) { if (!this.ready) return; this.nz(0.35, 0.16 * v, 'highpass', 3500, 6000, 0.5, null, 0, 0.02); },
   clank(v = 1) { if (!this.ready) return; const b = rand(500, 1300); this.osc('triangle', b, b * 0.92, 0.25, 0.12 * v); this.osc('square', b * 2.7, b * 2.5, 0.12, 0.03 * v); this.nz(0.05, 0.16 * v, 'highpass', 2500, 0); },
   bell(times = 1) {
     if (!this.ready) return;

@@ -92,13 +92,13 @@ const FX = {
   },
   burst(p, color = [3, 1.6, 0.6], size = 0.9) {
     this.glow.emit(p.x, p.y, p.z, 0, 0, 0, 0.16, size, size * 2.2, color[0], color[1], color[2], 1);
-    for (let i = 0; i < 6; i++) this.glow.emit(p.x, p.y, p.z, rand(-3, 3), rand(-1, 4), rand(-3, 3), rand(0.25, 0.6), 0.08, 0.02, color[0], color[1], color[2], 1, 9, 1);
+    for (let i = 0; i < 6; i++) this.glow.emit(p.x, p.y, p.z, rand(-3, 3), rand(-1, 4), rand(-3, 3), rand(0.25, 0.6), 0.08, 0.02, color[0], color[1], color[2], 1, 6, 1);
   },
   puff(p, n = 6, dark = 0.12, size = 0.6, up = 0.6, spread = 0.4, life = 1.6) {
     for (let i = 0; i < n; i++) this.smoke.emit(p.x + rand(-.1, .1), p.y + rand(-.1, .1), p.z + rand(-.1, .1), rand(-spread, spread), rand(0.2, 1) * up, rand(-spread, spread), life * rand(0.6, 1.3), size * 0.5, size * rand(1.6, 2.6), dark, dark, dark * 1.05, 0.55, -0.15, 1.2);
   },
   oil(p, dir, n = 10) {
-    for (let i = 0; i < n; i++) this.smoke.emit(p.x, p.y, p.z, dir.x * rand(1, 4) + rand(-1, 1), rand(0.5, 3), dir.z * rand(1, 4) + rand(-1, 1), rand(0.4, 0.8), 0.05, 0.03, 0.02, 0.018, 0.012, 0.95, 9.8, 0.5);
+    for (let i = 0; i < n; i++) this.smoke.emit(p.x, p.y, p.z, dir.x * rand(1, 4) + rand(-1, 1), rand(0.5, 3), dir.z * rand(1, 4) + rand(-1, 1), rand(0.5, 0.9), 0.05, 0.03, 0.02, 0.018, 0.012, 0.95, 6.5, 0.5);
   },
   flash(p, color, intensity = 30, dist = 7) {
     const l = this.lights[this.li]; this.li = (this.li + 1) % this.lights.length;
@@ -113,7 +113,7 @@ const FX = {
       const o = i * 10;
       if (sp[o + 6] <= 0) { P[i * 6] = P[i * 6 + 3] = 0; P[i * 6 + 1] = P[i * 6 + 4] = -50; P[i * 6 + 2] = P[i * 6 + 5] = 0; continue; }
       sp[o + 6] -= dt;
-      sp[o + 4] -= 12 * dt;
+      sp[o + 4] -= 8 * dt;
       const dr = Math.exp(-1.5 * dt); sp[o + 3] *= dr; sp[o + 5] *= dr;
       sp[o] += sp[o + 3] * dt; sp[o + 1] += sp[o + 4] * dt; sp[o + 2] += sp[o + 5] * dt;
       const fl = Arena.groundAt(sp[o], sp[o + 2]);
@@ -164,7 +164,7 @@ const Debris = {
     for (const d of this.list) {
       if (d.sleep) continue;
       d.t += dt;
-      d.vel.y -= 14 * dt;
+      d.vel.y -= (GRAV + 1) * dt;
       d.mesh.position.addScaledVector(d.vel, dt);
       const ax = d.ang; d.mesh.rotateX(ax.x * dt); d.mesh.rotateY(ax.y * dt); d.mesh.rotateZ(ax.z * dt);
       const p = d.mesh.position;
@@ -210,7 +210,7 @@ class Trail {
       fragmentShader: `uniform vec3 uC; uniform float uK; varying float vA; void main(){ gl_FragColor=vec4(uC*vA*uK,1.0); }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
-    this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 7; scene.add(this.mesh);
+    this.mesh = new THREE.Mesh(g, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 7; scene.add(this.mesh); this.mesh.userData.noAO = true;
     this.k = 0;
   }
   push(p, on, dt) {

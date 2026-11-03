@@ -111,6 +111,8 @@ const Cam = {
       const v = Game.victim, w = Game.winner; const vp = v.ragPos();
       const m = _c3.lerpVectors(vp, w.pos, 0.4); const ang = this.mt * 0.18 + 2;
       tp.set(m.x + Math.sin(ang) * 5.5, up + 1.3 + this.mt * 0.06, m.z + Math.cos(ang) * 5.5); tl.set(m.x, up + 1.0, m.z);
+    } else if (this.mode === 'fixed') {
+      tp.copy(this.fixedPos); tl.copy(this.fixedLook);
     } else if (this.mode === 'corner') {
       const m = _c3.addVectors(a.pos, b.pos).multiplyScalar(0.5);
       tp.set(m.x + 7, up + 3.6, m.z - 7.5); tl.set(m.x, up + 1.2, m.z);
@@ -176,7 +178,7 @@ const HUD = {
 // ============================================================================
 // GAME FLOW
 // ============================================================================
-const LADDER_ORDER = ['spectra', 'belljar', 'onyx', 'warden', 'mire', 'bulwark'];
+const LADDER_ORDER = ['spectra', 'torque', 'belljar', 'onyx', 'warden', 'mire', 'bulwark'];
 const LADDER_DIFF = ['rookie', 'rookie', 'contender', 'contender', 'champion'];
 const LADDER_ARENA = ['tanker', 'carnival', 'foundry', 'tanker', 'reactor'];
 
@@ -442,6 +444,7 @@ const Game = {
   },
   // ---- event hooks used by resolveHit
   hitstop(t) { this.hitstopT = Math.max(this.hitstopT, t); },
+  footShake(p, w) { if (this.mode !== 'fight') return; const d = camera.position.distanceTo(p); Cam.shake(Math.max(0, 0.05 * w - d * 0.006)); },
   shake(a) { Cam.shake(a); },
   onHit(a, d, dmg, mv, body) {
     this.excite = Math.min(1, this.excite + dmg / 350);
@@ -618,7 +621,7 @@ async function boot() {
   Game.setShowcase(UI.sel.p1);
   HUD.init(); Input.init(); UI.init();
   $('loading').remove();
-  window.__ironvolt = { Game, Arena, Cam, settings, FX };
+  window.__ironvolt = { Game, Arena, Cam, settings, FX, Fighter, ROBOT, V3 };
   requestAnimationFrame(loop);
 }
 boot();
