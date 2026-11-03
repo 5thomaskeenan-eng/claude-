@@ -371,7 +371,7 @@ const Game = {
     if (this.f) this.f.forEach(f => f.dispose());
     this.f = null; FX.clear(); Popups.clear(); HUD.clearAnnounce(); HUD.prompt(null);
     this.missiles.forEach(m => m.mesh && m.mesh.removeFromParent()); this.missiles = [];
-    this.ghosts.forEach(g => g.R.root.removeFromParent()); this.ghosts = [];
+    this.ghosts.forEach(g => { g.R.root.removeFromParent(); g.R.dispose(); }); this.ghosts = [];
     this.grab = null; this.clash = null;
     if (Intro.helis) { Intro.helis.forEach(h => h.g.removeFromParent()); Intro.helis = null; }
   },
@@ -588,7 +588,7 @@ const Game = {
     R.ghostMat.color.set(0xff70d0).multiplyScalar(0.8);
     this.ghosts.push({ R, t: 0 });
   },
-  updateGhosts(dt) { for (let i = this.ghosts.length - 1; i >= 0; i--) { const g = this.ghosts[i]; g.t += dt; g.R.ghostMat.opacity = 0.45 * (1 - g.t / 0.7); if (g.t > 0.7) { g.R.root.removeFromParent(); this.ghosts.splice(i, 1); } } },
+  updateGhosts(dt) { for (let i = this.ghosts.length - 1; i >= 0; i--) { const g = this.ghosts[i]; g.t += dt; g.R.ghostMat.opacity = 0.45 * (1 - g.t / 0.7); if (g.t > 0.7) { g.R.root.removeFromParent(); g.R.dispose(); this.ghosts.splice(i, 1); } } },
   onAbility(f, A) { if (A.name && f.idx === 0) HUD.announce(`<small>${A.name.toUpperCase()}</small>`); Cam.fovKick = 3; this.excite = Math.min(1, this.excite + 0.3); },
   onDestruction(p, n) { this.excite = Math.min(1, this.excite + n / 80); const d = camera.position.distanceTo(p); this.shake(Math.min(0.5, n / 60) * clamp(1.4 - d / 14, 0.2, 1)); },
   onCollapse(b) { SFX.boom(1.4); const c = V3((b.x0 + b.x1) / 2, b.nh * CH * 0.6, (b.z0 + b.z1) / 2); if (camera.position.distanceTo(c) < 25) Popups.show('BUILDING DOWN', c, 'y'); this.shake(0.5); this.onCrowd(1); },

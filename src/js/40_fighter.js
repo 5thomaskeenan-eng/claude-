@@ -149,11 +149,11 @@ class Fighter {
     this.abil = (def.abilities || []).concat(['blade']).map(id => ({ id, cd: 0 }));
     this.bladeT = 0; this.fortT = 0; this.counterT = 0; this.clones = []; this.cloneT = 0; this.od = 0; this.odT = 0;
     this.trails = { 1: new Trail(def.colors.accent), [-1]: new Trail(def.colors.accent) };
-    setEnvIntensity(this.rig, 1);
+    setEnvIntensity(this.rig, 1); this.rig.beam.visible = !!Arena.night;
   }
   dispose() {
-    FX.emitters = FX.emitters.filter(e => e.owner !== this); this.rig.root.removeFromParent(); this.trails[1].dispose(); this.trails[-1].dispose();
-    this.clones.forEach(c => c.R.root.removeFromParent()); this.clones = [];
+    FX.emitters = FX.emitters.filter(e => e.owner !== this); this.rig.root.removeFromParent(); this.rig.dispose(); this.trails[1].dispose(); this.trails[-1].dispose();
+    this.clones.forEach(c => { c.R.root.removeFromParent(); c.R.dispose(); }); this.clones = [];
     if (this.shield) this.shield.removeFromParent();
   }
   place(x, z, yaw) { this.pos.set(x, 0, z); this.yaw = yaw; this.vel.set(0, 0, 0); this.knock.set(0, 0, 0); this.vy = 0; this.plantFeet(); }
@@ -413,7 +413,7 @@ class Fighter {
     for (let i = this.clones.length - 1; i >= 0; i--) {
       const c = this.clones[i];
       c.a = c.dying ? c.a - dt * 2 : Math.min(1, c.a + dt * 3);
-      if (c.a <= 0) { c.R.root.removeFromParent(); this.clones.splice(i, 1); continue; }
+      if (c.a <= 0) { c.R.root.removeFromParent(); c.R.dispose(); this.clones.splice(i, 1); continue; }
       c.R.ghostMat.opacity = 0.34 * c.a;
       copyPose(this.rig, c.R);
       const left = _t1.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw)), fwd = _t2.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
@@ -589,7 +589,7 @@ function resolveHit(a, d) {
   const limb = mv.kind === 'kick' ? (mv.leg > 0 ? a.rig.footL : a.rig.footR) : mv.kind === 'knee' ? a.rig.knL : mv.hand > 0 ? a.rig.fistL : mv.hand < 0 ? a.rig.fistR : a.rig.chest;
   const fist = limb.getWorldPosition(V3()).addScaledVector(dir, 0.12 * a.S);
   if (mv.kind === 'smash' && a.held) fist.copy(a.held.mesh.position);
-  const range = a.reach + (mv.reach || 0) * a.S + (a.bladeT > 0 ? 0.25 * a.S : 0) + d.radius * 0.3;
+  const range = a.reach + (mv.reach || 0) * a.S + (a.bladeT > 0 ? (a.rig.bladeReach || 0.3) * a.S : 0) + d.radius * 0.3;
   const vert = Math.abs(a.pos.y - d.pos.y);
   if (mv.kind !== 'knee' && (d.isDown || dist > range || facing < 0.45 || vert > 1.2 * a.S || d.state === 'grabbed')) {
     const nb = Arena.buildingNear(a.pos, a.forward(V3()), a.reach + 0.3 * a.S, fist.y);

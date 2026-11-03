@@ -57,6 +57,44 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('stage').appendChild(renderer.domElement);
 
+// Height fog: patch three's fog chunks so haze thickens near the ground and thins with altitude.
+(function patchFog() {
+  const SC = THREE.ShaderChunk;
+  SC.fog_pars_vertex = `#ifdef USE_FOG
+    varying float vFogDepth;
+    varying float vFogY;
+  #endif`;
+  SC.fog_vertex = `#ifdef USE_FOG
+    vFogDepth = - mvPosition.z;
+    vec4 fogWP = vec4( transformed, 1.0 );
+    #ifdef USE_INSTANCING
+      fogWP = instanceMatrix * fogWP;
+    #endif
+    vFogY = ( modelMatrix * fogWP ).y;
+  #endif`;
+  SC.fog_pars_fragment = `#ifdef USE_FOG
+    uniform vec3 fogColor;
+    varying float vFogDepth;
+    varying float vFogY;
+    #ifdef FOG_EXP2
+      uniform float fogDensity;
+    #else
+      uniform float fogNear;
+      uniform float fogFar;
+    #endif
+  #endif`;
+  SC.fog_fragment = `#ifdef USE_FOG
+    #ifdef FOG_EXP2
+      float fogH = exp( - max( vFogY, 0.0 ) * 0.14 );
+      float fogD = fogDensity * mix( 0.42, 1.25, fogH );
+      float fogFactor = 1.0 - exp( - fogD * fogD * vFogDepth * vFogDepth );
+    #else
+      float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+    #endif
+    gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+  #endif`;
+})();
+
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.2, 420);
 // world scale: robots are ~2.5 units tall and read as ~4.5 m mechs next to 1-unit humans
@@ -68,16 +106,26 @@ const GradeShader = {
     tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.85 }, uAberr: { value: 0.0015 },
     uFlash: { value: 0 }, uDesat: { value: 0 }, uGrain: { value: 0.035 }, uTint: { value: new THREE.Color(1, 1, 1) },
     uRes: { value: new THREE.Vector2(1, 1) }, uRed: { value: 0 },
+    uContrast: { value: 1.06 }, uSat: { value: 1.05 }, uSharp: { value: 0.35 },
+    uShadow: { value: new THREE.Color(0.92, 0.97, 1.05) }, uHigh: { value: new THREE.Color(1.04, 1.0, 0.94) },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uTime,uVig,uAberr,uFlash,uDesat,uGrain,uRed; uniform vec3 uTint; uniform vec2 uRes;
+    uniform sampler2D tDiffuse; uniform float uTime,uVig,uAberr,uFlash,uDesat,uGrain,uRed,uContrast,uSat,uSharp; uniform vec3 uTint,uShadow,uHigh; uniform vec2 uRes;
     varying vec2 vUv;
     void main(){
       vec2 c=vUv-0.5; float r=dot(c,c);
       vec2 off=c*uAberr*(1.0+r*6.0);
       vec3 col=vec3(texture2D(tDiffuse,vUv+off).r, texture2D(tDiffuse,vUv).g, texture2D(tDiffuse,vUv-off).b);
+      vec2 px=1.0/uRes;
+      vec3 blur=(texture2D(tDiffuse,vUv+vec2(px.x,0.0)).rgb+texture2D(tDiffuse,vUv-vec2(px.x,0.0)).rgb+texture2D(tDiffuse,vUv+vec2(0.0,px.y)).rgb+texture2D(tDiffuse,vUv-vec2(0.0,px.y)).rgb)*0.25;
+      col+=(col-blur)*uSharp;
       float l=dot(col,vec3(0.299,0.587,0.114));
+      col*=mix(uShadow,vec3(1.0),smoothstep(0.0,0.45,l));
+      col*=mix(vec3(1.0),uHigh,smoothstep(0.45,1.0,l));
+      col=(col-0.5)*uContrast+0.5;
+      l=dot(col,vec3(0.299,0.587,0.114));
+      col=max(mix(vec3(l),col,uSat),0.0);
       col=mix(col,vec3(l),uDesat);
       col*=uTint;
       col=mix(col,vec3(1.0,0.96,0.88),uFlash);
@@ -111,8 +159,9 @@ function buildComposer() {
   if (q.bloom) { bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.4, 3.0); composer.addPass(bloomPass); }
   composer.addPass(new OutputPass());
   gradePass = new ShaderPass(GradeShader);
-  gradePass.uniforms.uRes.value.set(innerWidth, innerHeight);
+  gradePass.uniforms.uRes.value.set(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
   composer.addPass(gradePass);
+  applyGrade(currentGrade);
   renderer.shadowMap.enabled = q.shadow > 0;
   scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
   if (typeof Arena !== 'undefined' && Arena.current) Arena.applyShadowQuality();
@@ -122,9 +171,17 @@ window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight, false);
   composer.setSize(innerWidth, innerHeight);
-  gradePass.uniforms.uRes.value.set(innerWidth, innerHeight);
+  gradePass.uniforms.uRes.value.set(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
   FX.resize && FX.resize();
 });
+// per-map colour grade
+let currentGrade = { contrast: 1.06, sat: 1.05, sharp: 0.35, shadow: [0.92, 0.97, 1.05], high: [1.04, 1.0, 0.94], vig: 0.85 };
+function applyGrade(g) {
+  currentGrade = Object.assign({}, currentGrade, g);
+  if (!gradePass) return; const u = gradePass.uniforms, G = currentGrade;
+  u.uContrast.value = G.contrast; u.uSat.value = G.sat; u.uSharp.value = settings.quality === 'low' ? 0.15 : G.sharp; u.uVig.value = G.vig;
+  u.uShadow.value.setRGB(...G.shadow); u.uHigh.value.setRGB(...G.high);
+}
 
 // ---------------------------------------------------------------- procedural textures
 function makeCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
@@ -191,7 +248,7 @@ function rivet(g, x, y, r = 5) {
 // Matched colour / height / metal-chip maps for armour panels. Variant A: single plate with a cut line,
 // B: 2x2 plates, C: banded plates with vents, Q: quilted padding.
 function panelSet(seed, variant) {
-  const rnd = mulberry32(seed), R = (a, b) => a + rnd() * (b - a), W = 512;
+  const rnd = mulberry32(seed), R = (a, b) => a + rnd() * (b - a), W = variant === 'Q' ? 512 : 1024;
   const cc = makeCanvas(W, W), hc = makeCanvas(W, W), mc = makeCanvas(W, W);
   const g = cc.getContext('2d'), h = hc.getContext('2d'), m = mc.getContext('2d');
   g.fillStyle = '#e4e3df'; g.fillRect(0, 0, W, W);
@@ -250,6 +307,11 @@ function panelSet(seed, variant) {
 const TEX = {};
 function buildBaseTextures() {
   TEX.pA = panelSet(11, 'A'); TEX.pB = panelSet(23, 'B'); TEX.pC = panelSet(37, 'C'); TEX.pQ = panelSet(5, 'Q');
+  TEX.hazard = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#e8b100'; g.fillRect(0, 0, w, h); g.fillStyle = '#151515';
+    for (let x = -h; x < w + h; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 32, 0); g.lineTo(x + 32 + h, h); g.lineTo(x + h, h); g.fill(); }
+    blotches(g, w, h, 30, '0,0,0', .1, .35, 5, 40); scratches(g, w, h, 60, '255,255,255', .3); noiseFill(g, w, h, 24);
+  }, { repeat: [1, 1] });
   TEX.panel = canvasTex(512, 512, (g, w, h) => {
     g.fillStyle = '#e4e4e2'; g.fillRect(0, 0, w, h);
     blotches(g, w, h, 50, '0,0,0', .03, .09, 30, 120);

@@ -213,7 +213,7 @@ const ABILITIES = {
   clones: {
     name: 'Shadow Clones', cd: 20, start(f) {
       if (f.isDown) return false;
-      f.clones.forEach(c => c.R.root.removeFromParent()); f.clones = [];
+      f.clones.forEach(c => { c.R.root.removeFromParent(); c.R.dispose(); }); f.clones = [];
       for (const side of [1, -1]) {
         const R = buildRobot(f.def, { ghost: true }); R.root.scale.setScalar(f.S); scene.add(R.root);
         f.clones.push({ R, side, pos: f.pos.clone(), a: 0, dying: false });
