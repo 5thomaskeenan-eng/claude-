@@ -158,6 +158,21 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
 #combo{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:31%;font-family:var(--f-display);font-weight:900;font-size:58px;line-height:.9;color:var(--volt);text-shadow:0 3px 0 #000;opacity:0;transition:opacity .25s}
 #combo small{display:block;font-size:18px;letter-spacing:.2em;color:var(--chalk)}
 #combo.on{opacity:1}
+
+.abbar{display:flex;gap:6px}
+.abbar.p2{justify-content:flex-end;opacity:.8}
+.ab{position:relative;width:86px;height:46px;background:rgba(10,12,11,.72);border:1px solid rgba(255,255,255,.22);overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:4px 6px;box-sizing:border-box}
+.ab i{position:absolute;inset:0;background:rgba(0,0,0,.62);transform-origin:top;transform:scaleY(0)}
+.ab b{position:absolute;top:3px;left:6px;font-family:var(--f-mono);font-weight:400;font-size:11px;color:var(--dim)}
+.ab span{position:relative;font-family:var(--f-display);font-weight:800;font-size:13px;line-height:1;text-transform:uppercase;letter-spacing:.02em}
+.ab.ready{border-color:var(--volt)} .ab.ready b{color:var(--volt)}
+.ab.live{background:rgba(76,195,255,.35);border-color:var(--blue)}
+.abbar.p2 .ab{width:70px;height:38px}
+#prompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);text-align:center;font-family:var(--f-display);font-weight:900;font-size:26px;letter-spacing:.06em;width:min(420px,calc(100% - 32px));text-shadow:0 2px 0 #000}
+#prompt .gb{height:12px;border:1px solid var(--chalk);margin-top:6px;padding:2px}
+#prompt .gb i{display:block;height:100%;background:var(--volt);transform-origin:left;transform:scaleX(0)}
+.abil{display:flex;flex-wrap:wrap;gap:6px}
+.abil span{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--rivet);padding:3px 7px;color:var(--volt)}
 #getup{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);text-align:center;font-family:var(--f-mono);letter-spacing:.2em;font-size:14px;width:min(380px,calc(100% - 32px))}
 #getup .gb{height:12px;border:1px solid var(--chalk);margin-top:8px;padding:2px}
 #getup .gb i{display:block;height:100%;background:var(--volt);transform-origin:left;transform:scaleX(0)}
@@ -173,8 +188,8 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
 #touch{position:fixed;inset:0;z-index:12;pointer-events:none}
 #stick{position:absolute;left:max(24px,env(safe-area-inset-left,0px));bottom:max(30px,env(safe-area-inset-bottom,0px));width:140px;height:140px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(0,0,0,.25);pointer-events:auto}
 #stick i{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(236,233,223,.35)}
-#tbtns{position:absolute;right:max(16px,env(safe-area-inset-right,0px));bottom:max(24px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:repeat(3,64px);gap:8px;pointer-events:auto}
-#tbtns button{height:58px;border:1px solid rgba(255,255,255,.3);background:rgba(10,12,11,.55);font-family:var(--f-display);font-weight:800;font-size:16px;letter-spacing:.04em;text-transform:uppercase}
+#tbtns{position:absolute;right:max(16px,env(safe-area-inset-right,0px));bottom:max(24px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:repeat(4,54px);gap:6px;pointer-events:auto}
+#tbtns button{height:48px;border:1px solid rgba(255,255,255,.3);background:rgba(10,12,11,.55);font-family:var(--f-display);font-weight:800;font-size:16px;letter-spacing:.04em;text-transform:uppercase}
 #tbtns button.on,#tbtns button:active{background:rgba(255,177,43,.55)}
 #tbtns .od{color:var(--volt)}
 
@@ -191,7 +206,7 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
   .diag{display:none}
   .detail h3{font-size:40px}
   #hint{display:none}
-  .odbar{width:120px}
+  .ab{width:62px;height:38px} .ab span{font-size:11px} .abbar.p2{display:none}
 }
 @media (prefers-reduced-motion:reduce){
   #announce.show{animation-duration:2s}
@@ -221,14 +236,15 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
   <div id="announce"></div>
   <div id="popups"></div>
   <div id="train" hidden></div>
-  <div id="getup" hidden>MASH ANY PUNCH TO GET UP<div class="gb"><i id="getupbar"></i></div></div>
+  <div id="getup" hidden>MASH ANY PUNCH TO REBOOT<div class="gb"><i id="getupbar"></i></div></div>
+  <div id="prompt" hidden><span id="prompttxt"></span><div class="gb"><i id="promptbar"></i></div></div>
   <div class="hud-bot">
     <div>
-      <div class="odw p1" id="odw1"><label>OVERDRIVE · F</label><div class="odbar" id="od1"><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i></div></div>
+      <div class="abbar" id="ab1"></div>
       <div class="diag" id="dg1" style="margin-top:8px"></div>
     </div>
     <div>
-      <div class="odw p2" id="odw2"><label>OVERDRIVE</label><div class="odbar" id="od2"><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i></div></div>
+      <div class="abbar p2" id="ab2"></div>
       <div class="diag" id="dg2" style="margin-top:8px"></div>
     </div>
   </div>
@@ -238,20 +254,21 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
 <div id="touch" hidden>
   <div id="stick"><i></i></div>
   <div id="tbtns">
-    <button data-t="body">Body</button><button data-t="od" class="od">OD</button><button data-t="dodge">Slip</button>
-    <button data-t="hook">Hook</button><button data-t="upper">Upper</button><button data-t="block">Block</button>
-    <button data-t="jab">Jab</button><button data-t="cross">Cross</button><button data-t="pause">II</button>
+    <button data-t="ab0" class="od">Ab 1</button><button data-t="ab1" class="od">Ab 2</button><button data-t="ab2" class="od">Blade</button><button data-t="pause">II</button>
+    <button data-t="jump">Jump</button><button data-t="dodge">Dash</button><button data-t="run">Run</button><button data-t="pick">Lift</button>
+    <button data-t="kick">Kick</button><button data-t="grab">Grab</button><button data-t="block">Block</button><button data-t="upper">Upper</button>
+    <button data-t="jab">Jab</button><button data-t="cross">Cross</button><button data-t="hook">Hook</button>
   </div>
 </div>
 
 <div id="menu">
   <section class="screen" id="s-title">
-    <div class="eyebrow">Underground Robot Boxing League</div>
+    <div class="eyebrow">Giant mech combat · city and desert</div>
     <h1 class="logo">Iron<span>volt</span></h1>
-    <p class="tagline">Seven salvaged fighting mechs, each four times the size of a man. Four illegal venues. Plate armor that comes off one punch at a time.</p>
+    <p class="tagline">Seven war machines between 60 and 90 metres tall. Every building on the map comes down. So does your opponent.</p>
     <nav class="menu-list">
       <button class="mbtn" data-go="circuit">Circuit <small>Fight your way up the ladder</small></button>
-      <button class="mbtn" data-go="exhibition">Exhibition <small>Any robot, any venue</small></button>
+      <button class="mbtn" data-go="exhibition">Versus <small>Any mech, city or desert</small></button>
       <button class="mbtn" data-go="training">Training <small>Free sparring, no clock</small></button>
       <button class="mbtn" data-go="controls">Controls <small>Keyboard, pad, touch</small></button>
       <button class="mbtn" data-go="settings">Settings</button>
@@ -271,9 +288,9 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
   <section class="screen" id="s-setup" hidden>
     <div class="eyebrow">Fight card</div>
     <h2 id="setup-vs">—</h2>
-    <div class="field"><label>Venue</label><div class="arenas" id="arenas"></div></div>
+    <div class="field"><label>Battleground</label><div class="arenas" id="arenas"></div></div>
     <div class="field"><label>Opponent skill</label><div class="seg" id="seg-diff"></div></div>
-    <div class="field"><label>Rounds</label><div class="seg" id="seg-rounds"></div></div>
+    <p class="tagline">Every deployment starts with a different entrance: air drop, intercept or a surfacing.</p>
     <div class="spacer"></div>
     <div class="row"><button class="btn" data-back>Back</button><span class="spacer"></span><button class="btn go" id="setup-go">Ring the bell</button></div>
   </section>
@@ -291,30 +308,32 @@ table.rs thead th{font-family:var(--f-display);font-weight:800;font-size:18px;co
     <h2>Controls</h2>
     <div class="keys">
       <div class="h">Keyboard + mouse</div>
-      <kbd>W A S D</kbd><span>Step in, back off, circle</span>
-      <kbd>J</kbd><span>Jab (left), or left mouse button</span>
-      <kbd>K</kbd><span>Cross (right), or right mouse button</span>
-      <kbd>L</kbd><span>Left hook</span>
-      <kbd>I</kbd><span>Right uppercut</span>
-      <kbd>Shift + punch</kbd><span>Aim the punch at the body</span>
-      <kbd>Space</kbd><span>Block. Tap it just before a hit lands to parry</span>
-      <kbd>Q / E</kbd><span>Slip left / right</span>
-      <kbd>F</kbd><span>Overdrive, when the meter is full</span>
-      <kbd>C</kbd><span>Switch camera (shoulder / broadcast)</span>
+      <kbd>W A S D</kbd><span>Move and circle</span>
+      <kbd>Shift</kbd><span>Sprint (the first punch out of a sprint hits harder)</span>
+      <kbd>Space</kbd><span>Jump. Punch in the air for a dive punch. Mash it to break out of a grab</span>
+      <kbd>J · K · L · I</kbd><span>Jab · Cross · Hook · Uppercut (left mouse alternates jab and cross)</span>
+      <kbd>U</kbd><span>Kick. Pushes them away, into a building if one is behind them</span>
+      <kbd>F / right mouse</kbd><span>Block. Tap just before a hit to parry</span>
+      <kbd>G</kbd><span>Grab. Then J to knee, G to throw in the direction you hold</span>
+      <kbd>R</kbd><span>Lift a rock, car, container or rubble, or rip a chunk off a building. R or G throws it, punch smashes it</span>
+      <kbd>1 · 2</kbd><span>Your mech's two signature abilities</span>
+      <kbd>3</kbd><span>Arm blades: slashes do more damage and cut deeper into buildings</span>
+      <kbd>Q / E</kbd><span>Dash left / right</span>
+      <kbd>C</kbd><span>Shoulder or wide camera</span>
       <kbd>Esc / P</kbd><span>Pause</span>
       <div class="h">Gamepad</div>
-      <kbd>X · Y · B · A</kbd><span>Jab · Cross · Hook · Uppercut</span>
-      <kbd>LT</kbd><span>Body shots</span>
-      <kbd>RB / RT</kbd><span>Block</span>
-      <kbd>LB / right stick</kbd><span>Slip</span>
-      <kbd>R3 / D-pad up</kbd><span>Overdrive</span>
+      <kbd>X · Y · RT · LT</kbd><span>Jab · Cross · Hook · Uppercut</span>
+      <kbd>A · B</kbd><span>Jump · Kick</span>
+      <kbd>RB · LB</kbd><span>Block · Grab / throw</span>
+      <kbd>D-pad ← → ↑ · ↓</kbd><span>Ability 1 · 2 · Blades · Lift</span>
+      <kbd>L3 · R-stick flick</kbd><span>Sprint toggle · Dash</span>
     </div>
     <ul class="tips">
-      <li>Punch while your opponent is winding up for a counter: 35% extra damage.</li>
-      <li>Head shots build daze. Body shots drain stamina and slow its recovery.</li>
-      <li>Missed power punches leave you open. Jabs are safe.</li>
-      <li>Armor plates break off as a part takes damage. Watch the part readout in the corners.</li>
-      <li>Three knockdowns in one fight is a TKO.</li>
+      <li>Throw the same punch at the same moment as your opponent and you clash: mash punch to win it.</li>
+      <li>Grabs go straight through a block. Throw them into a building and it comes down on them.</li>
+      <li>Smash the bottom floors of a building and everything above falls.</li>
+      <li>Heavier mechs hit harder and get thrown less far. Light mechs are faster and jump higher.</li>
+      <li>Three knockdowns is system failure.</li>
     </ul>
     <div class="row"><button class="btn" data-back>Back</button></div>
   </section>

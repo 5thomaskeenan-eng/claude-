@@ -1,8 +1,7 @@
 // ============================================================================
 // FX: spark streaks, glow points, smoke, flash lights, physical debris
 // ============================================================================
-const RING_Y = 1.0;      // canvas height
-const RING_H = 3.7;      // half size inside the ropes
+const RING_Y = 0;        // ground level of the battle maps
 
 const PointShader = (additive) => new THREE.ShaderMaterial({
   uniforms: { uScale: { value: 600 } },
@@ -68,7 +67,7 @@ const FX = {
     this.group.add(this.sparks, this.glow.mesh, this.smoke.mesh);
     this.lights = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xffaa55, 0, 6, 2); this.group.add(l); return l; });
     this.li = 0;
-    this.emitters = [];
+    this.emitters = []; this.rings = [];
     scene.add(this.group);
     this.resize();
   },
@@ -129,6 +128,7 @@ const FX = {
     this.sparks.geometry.attributes.position.needsUpdate = true; this.sparks.geometry.attributes.color.needsUpdate = true;
     this.glow.update(dt); this.smoke.update(dt);
     for (const l of this.lights) { if (l.intensity > 0) { l.intensity = Math.max(0, l.intensity - l.userData.i0 * dt * 7); } }
+    for (let i = this.rings.length - 1; i >= 0; i--) { const r = this.rings[i]; r.t += dt; const k = r.t / r.life; const sc = 0.2 + easeOut(Math.min(1, k)) * r.radius; r.m.scale.set(sc, sc, sc); r.m.material.opacity = Math.max(0, 1 - k); if (k >= 1) { r.m.removeFromParent(); r.m.material.dispose(); this.rings.splice(i, 1); } }
     // continuous emitters (damaged parts smoking / sparking, welding etc.)
     for (const e of this.emitters) {
       e.acc += dt * e.rate;
@@ -142,7 +142,30 @@ const FX = {
       }
     }
   },
-  clear() { this.sp.fill(0); this.glow.clear(); this.smoke.clear(); for (const l of this.lights) l.intensity = 0; Debris.clear(); },
+  dust(p, k = 1, col = [0.5, 0.45, 0.4]) {
+    const n = Math.floor(6 + k * 10);
+    for (let i = 0; i < n; i++) this.smoke.emit(p.x + rand(-.4, .4) * k, p.y + rand(-.2, .3) * k, p.z + rand(-.4, .4) * k, rand(-1, 1) * k, rand(0.1, 0.9) * k, rand(-1, 1) * k, rand(1.8, 3.6), 0.4 * k, rand(1.6, 3.2) * k, col[0] * rand(0.8, 1.1), col[1] * rand(0.8, 1.1), col[2] * rand(0.8, 1.1), 0.65, -0.05, 1.4);
+  },
+  ring(p, radius, col = [3, 2.4, 1.6], life = 0.6) {
+    const m = new THREE.Mesh(this._ringGeo || (this._ringGeo = new THREE.RingGeometry(0.85, 1, 48)), new THREE.MeshBasicMaterial({ color: new THREE.Color(col[0], col[1], col[2]), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    m.rotation.x = -Math.PI / 2; m.position.copy(p); m.position.y += 0.05; m.userData.noAO = true; this.group.add(m);
+    this.rings.push({ m, t: 0, life, radius });
+  },
+  explode(p, k = 1) {
+    this.burst(p, [5, 3, 1.2], 2.5 * k); this.flash(p, 0xffa040, 120 * k, 14 * k);
+    for (let i = 0; i < 18 * k; i++) this.glow.emit(p.x, p.y, p.z, rand(-4, 4) * k, rand(-1, 5) * k, rand(-4, 4) * k, rand(0.3, 0.8), 0.25 * k, 0.05, 4, 2.2, 0.8, 1, 4, 1.5);
+    this.spark(p, V3(0, 1, 0), Math.floor(40 * k), 9 * k, [4, 2.4, 1]);
+    for (let i = 0; i < 14 * k; i++) this.smoke.emit(p.x, p.y, p.z, rand(-1.5, 1.5) * k, rand(0.3, 2) * k, rand(-1.5, 1.5) * k, rand(1.5, 3), 0.5 * k, 2.6 * k, 0.12, 0.1, 0.09, 0.8, -0.2, 1.2);
+    this.ring(V3(p.x, Arena.groundAt(p.x, p.z), p.z), 2.5 * k, [3.5, 2, 1], 0.5);
+  },
+  thruster(p, dir, k = 1) {
+    this.glow.emit(p.x, p.y, p.z, dir.x * 3 + rand(-.3, .3), dir.y * 3 + rand(-.3, .3), dir.z * 3 + rand(-.3, .3), 0.18, 0.35 * k, 0.05, 2.5, 3, 4.5, 1, 0, 2);
+    if (Math.random() < 0.4) this.smoke.emit(p.x, p.y, p.z, dir.x * 1.5, dir.y * 1.5, dir.z * 1.5, 0.8, 0.2, 0.9, 0.3, 0.3, 0.32, 0.4, -0.2, 1.5);
+  },
+  splash(p, k = 1) {
+    for (let i = 0; i < 20 * k; i++) this.smoke.emit(p.x + rand(-.5, .5), p.y, p.z + rand(-.5, .5), rand(-1.5, 1.5), rand(2, 5) * k, rand(-1.5, 1.5), rand(0.8, 1.6), 0.15, 0.6, 0.75, 0.85, 0.9, 0.7, 6, 0.4);
+  },
+  clear() { this.sp.fill(0); this.glow.clear(); this.smoke.clear(); for (const l of this.lights) l.intensity = 0; Debris.clear(); this.rings.forEach(r => r.m.removeFromParent()); this.rings.length = 0; },
 };
 const _fxv = new THREE.Vector3(), _fxd = new THREE.Vector3();
 

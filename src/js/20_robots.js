@@ -9,7 +9,7 @@ const ROBOTS = [
     stats: { power: 8, speed: 4, armor: 9, reach: 7, stamina: 6 },
     colors: { primary: 0xd9dbd6, secondary: 0x8d928e, dark: 0x2b2e31, accent: 0xc8ff2e, eye: 0xc8ff2e },
     dims: { hipH: 1.0, hipW: 0.27, thigh: 0.5, shin: 0.52, ankle: 0.17, spineY: 0.16, chestY: 0.5, shX: 0.78, shY: 0.26, upper: 0.6, fore: 0.68, neckY: 0.5, neckZ: 0.12, stanceW: 0.42, hunch: 0.1 },
-    build: 'bulwark',
+    build: 'bulwark', scale: 1.22, abilities: ['wrecking', 'quake'],
     persona: { range: 0.92, body: 0.3, aggr: 0.9, combos: [['jab', 'cross'], ['jab', 'jab', 'cross'], ['cross', 'hook'], ['hook', 'upper'], ['jab', 'body:cross']] },
   },
   {
@@ -18,7 +18,7 @@ const ROBOTS = [
     stats: { power: 9, speed: 5, armor: 7, reach: 9, stamina: 6 },
     colors: { primary: 0x3d4044, secondary: 0x33363a, dark: 0x1a1b1e, accent: 0xd9e0e4, eye: 0xff6a1f },
     dims: { hipH: 1.0, hipW: 0.3, thigh: 0.5, shin: 0.5, ankle: 0.14, spineY: 0.14, chestY: 0.52, shX: 0.82, shY: 0.2, upper: 0.7, fore: 0.8, neckY: 0.44, neckZ: 0.16, stanceW: 0.45, hunch: 0.2 },
-    build: 'onyx',
+    build: 'onyx', scale: 1.15, abilities: ['boulder', 'pound'],
     persona: { range: 1.0, body: 0.4, aggr: 1.1, combos: [['hook', 'hook'], ['jab', 'hook'], ['body:hook', 'upper'], ['cross', 'hook', 'upper'], ['jab', 'cross']] },
   },
   {
@@ -27,7 +27,7 @@ const ROBOTS = [
     stats: { power: 6, speed: 9, armor: 7, reach: 6, stamina: 7 },
     colors: { primary: 0xe3e4df, secondary: 0x9a9e9a, dark: 0x2a2c2e, accent: 0xd4ff1e, eye: 0xd4ff1e },
     dims: { hipH: 1.2, hipW: 0.17, thigh: 0.32, shin: 0.32, ankle: 0.58, spineY: 0.16, chestY: 0.48, shX: 0.66, shY: 0.26, upper: 0.56, fore: 0.6, neckY: 0.44, neckZ: 0.06, stanceW: 0.13, hunch: 0.06, wheeled: true, footFwd: 0 },
-    build: 'torque',
+    build: 'torque', scale: 0.86, abilities: ['nitro', 'clones'],
     persona: { range: 0.95, body: 0.3, aggr: 1.15, combos: [['jab', 'jab', 'cross'], ['jab', 'hook'], ['cross', 'hook', 'cross'], ['body:jab', 'hook'], ['jab', 'cross', 'upper']] },
   },
   {
@@ -36,7 +36,7 @@ const ROBOTS = [
     stats: { power: 5, speed: 9, armor: 5, reach: 7, stamina: 8 },
     colors: { primary: 0x1f2c54, secondary: 0x2c3d6e, dark: 0x111420, accent: 0x34ff6e, eye: 0xff3048, glowArm: 0xff4410, glowLegL: 0x2f6bff, glowLegR: 0xa04dff, glowPink: 0xff2fb4 },
     dims: { hipH: 1.2, hipW: 0.23, thigh: 0.6, shin: 0.62, ankle: 0.14, spineY: 0.16, chestY: 0.46, shX: 0.62, shY: 0.25, upper: 0.56, fore: 0.6, neckY: 0.44, neckZ: 0.05, stanceW: 0.34, hunch: 0.02 },
-    build: 'spectra',
+    build: 'spectra', scale: 0.95, abilities: ['phase', 'plasma'],
     persona: { range: 1.05, body: 0.25, aggr: 1.0, combos: [['jab', 'jab'], ['jab', 'jab', 'cross'], ['jab', 'cross', 'hook'], ['jab', 'body:jab', 'cross'], ['jab', 'cross', 'jab', 'upper']] },
   },
   {
@@ -45,7 +45,7 @@ const ROBOTS = [
     stats: { power: 7, speed: 5, armor: 8, reach: 6, stamina: 8 },
     colors: { primary: 0x8e918d, secondary: 0x6c7a3a, tertiary: 0x4a6f9e, dark: 0x2a2b29, brown: 0x6a4630, accent: 0x84a9d6, eye: 0xff2a1a },
     dims: { hipH: 1.2, hipW: 0.28, thigh: 0.62, shin: 0.58, ankle: 0.15, spineY: 0.16, chestY: 0.4, shX: 0.62, shY: 0.2, upper: 0.54, fore: 0.58, neckY: 0.34, neckZ: 0.02, stanceW: 0.4, hunch: 0.02 },
-    build: 'belljar',
+    build: 'belljar', scale: 1.04, abilities: ['ram', 'dome'],
     persona: { range: 0.95, body: 0.35, aggr: 0.7, counter: 1, combos: [['jab', 'cross'], ['cross', 'hook'], ['body:hook', 'hook'], ['upper', 'cross'], ['jab', 'upper']] },
   },
   {
@@ -54,7 +54,7 @@ const ROBOTS = [
     stats: { power: 7, speed: 7, armor: 6, reach: 8, stamina: 7 },
     colors: { primary: 0x5f6b28, secondary: 0x4a5420, dark: 0x16181a, accent: 0xeef4ff, eye: 0xff6a12 },
     dims: { hipH: 1.26, hipW: 0.24, thigh: 0.64, shin: 0.64, ankle: 0.16, spineY: 0.16, chestY: 0.44, shX: 0.66, shY: 0.25, upper: 0.6, fore: 0.64, neckY: 0.42, neckZ: 0.06, stanceW: 0.36, hunch: 0.05 },
-    build: 'warden',
+    build: 'warden', scale: 1.08, abilities: ['missiles', 'harpoon'],
     persona: { range: 1.0, body: 0.35, aggr: 1.0, combos: [['jab', 'cross', 'hook'], ['jab', 'body:cross', 'hook'], ['jab', 'cross', 'upper'], ['hook', 'cross'], ['jab', 'jab', 'cross', 'hook']] },
   },
   {
@@ -63,7 +63,7 @@ const ROBOTS = [
     stats: { power: 8, speed: 7, armor: 5, reach: 8, stamina: 7 },
     colors: { primary: 0x434b39, secondary: 0x2f3529, dark: 0x141612, accent: 0xb9c84a, eye: 0xf2ff2a },
     dims: { hipH: 1.04, hipW: 0.28, thigh: 0.54, shin: 0.54, ankle: 0.13, spineY: 0.12, chestY: 0.46, shX: 0.78, shY: 0.22, upper: 0.66, fore: 0.76, neckY: 0.3, neckZ: 0.32, stanceW: 0.46, hunch: 0.34 },
-    build: 'mire',
+    build: 'mire', scale: 1.0, abilities: ['pounce', 'rend'],
     persona: { range: 0.88, body: 0.45, aggr: 1.25, combos: [['hook', 'hook', 'upper'], ['body:hook', 'body:hook', 'upper'], ['upper', 'hook'], ['jab', 'hook', 'hook'], ['cross', 'upper']] },
   },
 ];
@@ -187,8 +187,23 @@ function buildRobot(def, opts = {}) {
 
   BUILDERS[def.build]({ R, m, d, P, A, piston, cable, bolts, HP, C, H, sides, sh, el, fi, hp, kn, ft, zoneOf, U, F, T, S });
 
-  // overdrive aura light
+  // forearm blades (deployed by the Blade ability)
+  R.blades = {};
+  for (const s of sides) {
+    const bg = new THREE.Group(); bg.position.set(s * 0.2, 0.06, F * 0.5); el(s).add(bg); bg.visible = false; bg.scale.z = 0.01;
+    const steel = new THREE.MeshStandardMaterial({ color: 0xb8bec4, metalness: 1, roughness: 0.18 });
+    P(bg, G.box(0.035, 0.16, 1.0, 0.01), steel, [0, 0, 0.5]);
+    P(bg, G.box(0.03, 0.11, 0.24, 0.01), steel, [0, -0.025, 1.06], [0.35, 0, 0]);
+    P(bg, G.box(0.012, 0.02, 1.0, 0.004), m.glow, [0, 0.085, 0.5]);
+    P(bg, G.box(0.07, 0.2, 0.18, 0.02), m.dark, [0, 0, 0.0]);
+    R.blades[s] = bg;
+  }
   R.aura = new THREE.PointLight(def.colors.accent, 0, 5, 2); R.aura.position.set(0, 0.2, 0.7); R.chest.add(R.aura);
+  if (opts.ghost) {
+    const gm = new THREE.MeshBasicMaterial({ color: new THREE.Color(def.colors.accent).lerp(new THREE.Color(0x404a80), 0.5).multiplyScalar(0.9), transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false });
+    R.root.traverse(o => { if (o.isMesh) { o.material = gm; o.castShadow = false; o.receiveShadow = false; o.userData.noAO = true; } });
+    R.ghostMat = gm; R.aura.intensity = 0;
+  }
   R.root.traverse(o => { if (o.isMesh) o.userData.robot = true; });
   if (opts.scale) R.root.scale.setScalar(opts.scale);
   return R;
@@ -619,4 +634,13 @@ function poseStatic(R, kind = 'idle') {
     solveIK(s > 0 ? R.hipL : R.hipR, s > 0 ? R.knL : R.knR, d.thigh * sc, d.shin * sc, ank, fwd, fwd);
   }
   updatePistons(R);
+}
+
+const POSE_JOINTS = ['body', 'spine', 'chest', 'neck', 'shL', 'shR', 'elL', 'elR', 'hipL', 'hipR', 'knL', 'knR', 'footL', 'footR'];
+function copyPose(src, dst) {
+  for (const k of POSE_JOINTS) { dst[k].position.copy(src[k].position); dst[k].quaternion.copy(src[k].quaternion); }
+  dst.root.quaternion.copy(src.root.quaternion); dst.root.scale.copy(src.root.scale);
+  if (src.wheel && dst.wheel) dst.wheel.rotation.x = src.wheel.rotation.x;
+  for (const s of [1, -1]) { dst.blades[s].visible = src.blades[s].visible; dst.blades[s].scale.z = src.blades[s].scale.z; }
+  dst.root.updateMatrixWorld(true); updatePistons(dst);
 }

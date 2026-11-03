@@ -10,6 +10,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Sky } from 'three/addons/objects/Sky.js';
 
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -57,9 +58,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 $('stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.15, 260);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.2, 420);
 // world scale: robots are ~2.5 units tall and read as ~4.5 m mechs next to 1-unit humans
-const HUMAN = 0.55, GRAV = 7.2;
+const HUMAN = 0.55, GRAV = 5.2;
 camera.position.set(0, 3, 8);
 
 const GradeShader = {
@@ -425,6 +426,14 @@ const SFX = {
     this.osc('sawtooth', 220, 110, 0.18, 0.035 * power);
   },
   step(v = 1) { if (!this.ready) return; this.osc('sine', 62, 28, 0.22, 0.38 * v); this.nz(0.1, 0.18 * v, 'lowpass', 500, 120); this.osc('triangle', rand(300, 500), 200, 0.06, 0.03 * v); },
+  crumble(v = 1) {
+    if (!this.ready) return; const k = clamp(v, 0.2, 2);
+    this.nz(0.6 + k * 0.8, 0.5 * k, 'lowpass', 900, 120, 0.7, null, 0, 0.01);
+    this.osc('sine', 60, 25, 0.8 + k * 0.4, 0.6 * k);
+    for (let i = 0; i < 3 + k * 4; i++) this.nz(0.08, 0.2 * k, 'bandpass', rand(300, 1400), 0, 2, null, rand(0, 0.6 + k * 0.5));
+  },
+  boom(v = 1) { if (!this.ready) return; this.osc('sine', 80, 20, 1.2, 1.1 * v); this.nz(1.2, 0.9 * v, 'lowpass', 2000, 100, 0.5); this.nz(0.2, 0.6 * v, 'highpass', 3000, 0, 0.7); },
+  land(v = 1) { if (!this.ready) return; this.osc('sine', 50, 20, 0.6, 1.0 * v); this.nz(0.5, 0.6 * v, 'lowpass', 700, 80, 0.7); },
   hiss(v = 1) { if (!this.ready) return; this.nz(0.35, 0.16 * v, 'highpass', 3500, 6000, 0.5, null, 0, 0.02); },
   clank(v = 1) { if (!this.ready) return; const b = rand(500, 1300); this.osc('triangle', b, b * 0.92, 0.25, 0.12 * v); this.osc('square', b * 2.7, b * 2.5, 0.12, 0.03 * v); this.nz(0.05, 0.16 * v, 'highpass', 2500, 0); },
   bell(times = 1) {
